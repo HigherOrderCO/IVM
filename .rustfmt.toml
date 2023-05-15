@@ -1,0 +1,12 @@
+edition = "2021"
+version = "Two"
+max_width = 110
+newline_style = "Unix"
+use_small_heuristics = "Max"
+hard_tabs = true
+imports_granularity = "Crate"
+reorder_impl_items = true
+use_field_init_shorthand = true
+use_try_shorthand = true
+spaces_around_ranges = true
+overflow_delimited_expr = true
