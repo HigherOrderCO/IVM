@@ -1,3 +1,24 @@
+/* Syntax:
+
+<agent_name> = [A-Z][_a-zA-Z0-9]*
+<port_name> = [a-z][_a-zA-Z0-9]*
+<agent> = <agent_name> ( $(<port_name>),* )
+<agent_def> = agent <agent>
+<nested_agent> = <agent_name> ( $(<port_name> | <nested_agent>),* )
+<connector> = <nested_agent> | <port_name>
+<connection> = <connector> ~ <connector>
+<connections> = $(<connection>),+
+<active_pair> = <agent> ~ <agent>
+<rule_def> = rule <active_pair> = <connections>
+<definition> = <agent_def> | <rule_def>
+<init> = init <connections>
+<ast> = $(<definition>)+ <init>
+
+Note: Whitespace and comments are ignored.
+Single-line comments start with `//` and end with a newline.
+Multi-line comments start with `/*` and end with `*/`, and can be nested.
+*/
+
 pub mod ast;
 pub mod display;
 pub mod flatten;
@@ -14,14 +35,9 @@ use itertools::{Either, Itertools};
 use logos::Logos;
 
 impl Ast {
+  // Constructs parser and returns it
   fn parser<'a, I: ValueInput<'a, Token = Token<'a>, Span = SimpleSpan>>()
   -> impl Parser<'a, I, Ast, extra::Err<Rich<'a, Token<'a>>>> {
-    #[derive(Debug, Clone)]
-    pub enum Definition {
-      Agent(Agent),
-      Rule(Rule),
-    }
-
     let agent_name = select! { Token::Agent(s) => s.to_string() }.labelled("agent");
 
     let port_name = select! { Token::Port(s) => s.to_string() }.labelled("port");
@@ -53,6 +69,13 @@ impl Ast {
         .map(|(agent, ports)| NestedAgent { agent, ports: ports.unwrap_or_default() })
         .labelled("agent")
     });
+
+    // Agent and rule definitions can be interleaved
+    #[derive(Debug, Clone)]
+    pub enum Definition {
+      Agent(Agent),
+      Rule(Rule),
+    }
 
     let agent_def = just(Token::KeywordAgent).ignore_then(agent).map(Definition::Agent);
 
@@ -92,8 +115,10 @@ impl Ast {
     let init = just(Token::KeywordInit).ignore_then(connections);
 
     let definition = agent_def.or(rule_def);
-    definition.repeated().collect::<Vec<_>>().then(init).validate(
+
+    let ast = definition.repeated().at_least(1).collect::<Vec<_>>().then(init).validate(
       |(definitions, init_connections), span, emitter| {
+        // Separate the interleaved agent and rule definitions
         let (agents, rules) = definitions.into_iter().partition_map(|def| match def {
           Definition::Agent(agent) => Either::Left(agent),
           Definition::Rule(rule) => Either::Right(rule),
@@ -101,27 +126,13 @@ impl Ast {
 
         let init_connections = flatten_connections(init_connections);
 
-        let mut root_refs = 0;
-        init_connections.iter().for_each(|conn| {
-          fn visit_ports(obj: &Connector, cb: &mut impl FnMut(&str)) {
-            match obj {
-              Connector::Agent(Agent { agent: _, ports }) => {
-                for port in ports {
-                  cb(port)
-                }
-              }
-              Connector::Port(port) => cb(port),
-            }
-          }
-          let mut cb = |port: &str| {
-            if port == ROOT_PORT_NAME {
-              root_refs += 1;
-            }
-          };
-          visit_ports(&conn.lhs, &mut cb);
-          visit_ports(&conn.rhs, &mut cb);
-        });
-        if root_refs != 1 {
+        // Root port must be referenced exactly once
+        let refs_to_root_port = init_connections
+          .iter()
+          .flat_map(|conn| conn.port_names())
+          .filter(|port| *port == ROOT_PORT_NAME)
+          .count();
+        if refs_to_root_port != 1 {
           emitter.emit(Rich::custom(
             span,
             format!(
@@ -133,7 +144,9 @@ impl Ast {
 
         Ast { agents, rules, init: init_connections }
       },
-    )
+    );
+
+    ast
   }
 
   // TODO: Return Result

@@ -62,7 +62,7 @@ impl RuleBook {
     };
     let key = (lhs_id, rhs_id); // Ordered pair
     if let Some(RuleRhs { rule, port_idx_to_name, connections }) = self.rules.get(&key) {
-      eprintln!("Applying rule for active pair `{active_pair:?}`: {rule}");
+      // eprintln!("Applying rule for active pair `{active_pair:?}`: {rule}");
       // TODO: Optimize, don't do port lookup by name
       let external_links = [lhs_node, rhs_node]
         .into_iter()

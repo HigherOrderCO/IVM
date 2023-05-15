@@ -60,6 +60,15 @@ pub struct Connection {
   pub rhs: Connector,
 }
 
+impl Connection {
+  pub fn port_names(&self) -> impl Iterator<Item = &PortName> {
+    [&self.lhs, &self.rhs].into_iter().flat_map(|connector| match connector {
+      Connector::Agent(Agent { agent: _, ports }) => ports,
+      Connector::Port(port) => std::slice::from_ref(port),
+    })
+  }
+}
+
 // Rule types
 
 // E.g. A(a, b) ~ B(c, d)
