@@ -1,20 +1,20 @@
 use crate::{
-	lexer::*,
-	parser::{
-		ast::*,
-		display::{fmt_connections, fmt_nested_connections},
-		flatten::unflatten_connections,
-	},
-	MyError,
+  lexer::*,
+  parser::{
+    ast::*,
+    display::{fmt_connections, fmt_nested_connections},
+    flatten::unflatten_connections,
+  },
+  MyError,
 };
 use itertools::Itertools;
 use logos::Logos;
 
 #[test]
 fn test_lexer() {
-	use Token::*;
+  use Token::*;
 
-	assert_eq!(Token::lexer(
+  assert_eq!(Token::lexer(
 		"//
 		agent rule init()/**/,=~/*:<-_*/ /* loads and loads of senseless drivel /* --ahem, useful documentation */ featuring nested comments */
 		// single line comment"
@@ -26,9 +26,9 @@ fn test_lexer() {
 
 #[test]
 fn test_parser() {
-	assert_eq!(
-		Ast::parse(
-			"
+  assert_eq!(
+    Ast::parse(
+      "
 		// Nat
 		agent Zero
 		agent Succ(pred)
@@ -37,78 +37,69 @@ fn test_parser() {
 
 		init root ~ Succ(Succ(Zero))
 		"
-		),
-		Some(Ast {
-			agents: vec![Agent { agent: "Zero".to_string(), ports: vec![] }, Agent {
-				agent: "Succ".to_string(),
-				ports: vec!["pred".to_string()]
-			}],
-			rules: vec![
-				Rule {
-					lhs: ActivePair {
-						lhs: Agent { agent: "Succ".to_string(), ports: vec!["ret".to_string()] },
-						rhs: Agent { agent: "Zero".to_string(), ports: vec![] }
-					},
-					rhs: vec![
-						Connection {
-							lhs: Connector::Port("ret".to_string()),
-							rhs: Connector::Agent(Agent {
-								agent: "Succ".to_string(),
-								ports: vec!["_0".to_string()]
-							})
-						},
-						Connection {
-							lhs: Connector::Port("_0".to_string()),
-							rhs: Connector::Agent(Agent { agent: "Zero".to_string(), ports: vec![] })
-						}
-					]
-				},
-				Rule {
-					lhs: ActivePair {
-						lhs: Agent { agent: "Succ".to_string(), ports: vec!["ret".to_string()] },
-						rhs: Agent { agent: "Succ".to_string(), ports: vec!["p".to_string()] }
-					},
-					rhs: vec![
-						Connection {
-							lhs: Connector::Port("ret".to_string()),
-							rhs: Connector::Agent(Agent {
-								agent: "Succ".to_string(),
-								ports: vec!["_0".to_string()]
-							})
-						},
-						Connection {
-							lhs: Connector::Port("_0".to_string()),
-							rhs: Connector::Agent(Agent {
-								agent: "Succ".to_string(),
-								ports: vec!["p".to_string()]
-							})
-						}
-					]
-				}
-			],
-			init: vec![
-				Connection {
-					lhs: Connector::Port(ROOT_PORT_NAME.to_string()),
-					rhs: Connector::Agent(Agent { agent: "Succ".to_string(), ports: vec!["_0".to_string()] })
-				},
-				Connection {
-					lhs: Connector::Port("_0".to_string()),
-					rhs: Connector::Agent(Agent { agent: "Succ".to_string(), ports: vec!["_1".to_string()] })
-				},
-				Connection {
-					lhs: Connector::Port("_1".to_string()),
-					rhs: Connector::Agent(Agent { agent: "Zero".to_string(), ports: vec![] })
-				}
-			]
-		})
-	);
+    ),
+    Some(Ast {
+      agents: vec![Agent { agent: "Zero".to_string(), ports: vec![] }, Agent {
+        agent: "Succ".to_string(),
+        ports: vec!["pred".to_string()]
+      }],
+      rules: vec![
+        Rule {
+          lhs: ActivePair {
+            lhs: Agent { agent: "Succ".to_string(), ports: vec!["ret".to_string()] },
+            rhs: Agent { agent: "Zero".to_string(), ports: vec![] }
+          },
+          rhs: vec![
+            Connection {
+              lhs: Connector::Port("ret".to_string()),
+              rhs: Connector::Agent(Agent { agent: "Succ".to_string(), ports: vec!["_0".to_string()] })
+            },
+            Connection {
+              lhs: Connector::Port("_0".to_string()),
+              rhs: Connector::Agent(Agent { agent: "Zero".to_string(), ports: vec![] })
+            }
+          ]
+        },
+        Rule {
+          lhs: ActivePair {
+            lhs: Agent { agent: "Succ".to_string(), ports: vec!["ret".to_string()] },
+            rhs: Agent { agent: "Succ".to_string(), ports: vec!["p".to_string()] }
+          },
+          rhs: vec![
+            Connection {
+              lhs: Connector::Port("ret".to_string()),
+              rhs: Connector::Agent(Agent { agent: "Succ".to_string(), ports: vec!["_0".to_string()] })
+            },
+            Connection {
+              lhs: Connector::Port("_0".to_string()),
+              rhs: Connector::Agent(Agent { agent: "Succ".to_string(), ports: vec!["p".to_string()] })
+            }
+          ]
+        }
+      ],
+      init: vec![
+        Connection {
+          lhs: Connector::Port(ROOT_PORT_NAME.to_string()),
+          rhs: Connector::Agent(Agent { agent: "Succ".to_string(), ports: vec!["_0".to_string()] })
+        },
+        Connection {
+          lhs: Connector::Port("_0".to_string()),
+          rhs: Connector::Agent(Agent { agent: "Succ".to_string(), ports: vec!["_1".to_string()] })
+        },
+        Connection {
+          lhs: Connector::Port("_1".to_string()),
+          rhs: Connector::Agent(Agent { agent: "Zero".to_string(), ports: vec![] })
+        }
+      ]
+    })
+  );
 }
 
 #[test]
 fn test_ast_validation() {
-	assert!(
-		Ast::parse(
-			"
+  assert!(
+    Ast::parse(
+      "
 		agent Zero()
 		agent Succ(pred)
 		rule Succ(ret) ~ Zero = ret ~ Succ(Zero)
@@ -120,17 +111,17 @@ fn test_ast_validation() {
 
 		init a ~ Succ(Zero), Add(root, a) ~ Succ(Succ(Succ(Zero)))
 		"
-		)
-		.unwrap()
-		.build_rulebook()
-		.is_ok()
-	);
+    )
+    .unwrap()
+    .build_rulebook()
+    .is_ok()
+  );
 }
 
 #[test]
 fn test_to_inet() -> Result<(), MyError> {
-	let ast = Ast::parse(
-		"
+  let ast = Ast::parse(
+    "
 		agent Zero()
 		agent Succ(pred)
 		rule Succ(ret) ~ Zero = ret ~ Succ(Zero)
@@ -142,21 +133,21 @@ fn test_to_inet() -> Result<(), MyError> {
 
 		init a ~ Succ(Zero), Add(root, a) ~ Succ(Succ(Succ(Zero)))
 		",
-	)
-	.unwrap();
-	let rule_book = ast.build_rulebook()?;
-	let mut net = ast.to_inet(&rule_book.agent_name_to_id);
-	net.validate();
-	eprintln!("{:#?}", net);
-	assert_eq!(net.active_pairs().len(), 1, "{}\n{:#?}", ast, net);
-	assert!(net.reduce_step(&rule_book));
-	Ok(())
+  )
+  .unwrap();
+  let rule_book = ast.build_rulebook()?;
+  let mut net = ast.to_inet(&rule_book.agent_name_to_id);
+  net.validate();
+  eprintln!("{:#?}", net);
+  assert_eq!(net.active_pairs().len(), 1, "{}\n{:#?}", ast, net);
+  assert!(net.reduce_step(&rule_book));
+  Ok(())
 }
 
 #[test]
 fn test_reduce_inet() -> Result<(), MyError> {
-	let ast = Ast::parse(
-		"
+  let ast = Ast::parse(
+    "
 		agent Zero()
 		agent Succ(pred)
 		rule Succ(ret) ~ Zero = ret ~ Succ(Zero)
@@ -168,48 +159,48 @@ fn test_reduce_inet() -> Result<(), MyError> {
 
 		init Add(root, Zero) ~ Zero
 		",
-	)
-	.unwrap();
-	let rule_book = ast.build_rulebook()?;
-	let mut net = ast.to_inet(&rule_book.agent_name_to_id);
-	net.validate();
-	eprintln!("{:#?}", net);
-	assert_eq!(net.active_pairs().len(), 1, "{}\n{:#?}", ast, net);
-	assert!(net.reduce_step(&rule_book));
-	net.reduce_full(&rule_book);
-	eprintln!("{:#?}", net);
-	eprintln!("net.active_pairs(): {:#?}", net.active_pairs());
-	assert_eq!(net.active_pairs(), vec![(0, 3)], "{}\n{:#?}", ast, net);
-	Ok(())
+  )
+  .unwrap();
+  let rule_book = ast.build_rulebook()?;
+  let mut net = ast.to_inet(&rule_book.agent_name_to_id);
+  net.validate();
+  eprintln!("{:#?}", net);
+  assert_eq!(net.active_pairs().len(), 1, "{}\n{:#?}", ast, net);
+  assert!(net.reduce_step(&rule_book));
+  net.reduce_full(&rule_book);
+  eprintln!("{:#?}", net);
+  eprintln!("net.active_pairs(): {:#?}", net.active_pairs());
+  assert_eq!(net.active_pairs(), vec![(0, 3)], "{}\n{:#?}", ast, net);
+  Ok(())
 }
 
 #[test]
 fn test_reduce_inet_basic() -> Result<(), MyError> {
-	let ast = Ast::parse(
-		"
+  let ast = Ast::parse(
+    "
 		agent A(a)
 		agent B
 		rule A(a) ~ B = a ~ B
 		init A(root) ~ B
 		",
-	)
-	.unwrap();
-	let rule_book = ast.build_rulebook()?;
-	let mut net = ast.to_inet(&rule_book.agent_name_to_id);
-	net.validate();
-	eprintln!("{:#?}", net);
-	assert_eq!(net.active_pairs().len(), 1, "{}\n{:#?}", ast, net);
-	assert!(net.reduce_step(&rule_book));
-	assert!(!net.reduce_step(&rule_book));
-	eprintln!("{:#?}", net);
-	eprintln!("net.active_pairs(): {:#?}", net.active_pairs());
-	Ok(())
+  )
+  .unwrap();
+  let rule_book = ast.build_rulebook()?;
+  let mut net = ast.to_inet(&rule_book.agent_name_to_id);
+  net.validate();
+  eprintln!("{:#?}", net);
+  assert_eq!(net.active_pairs().len(), 1, "{}\n{:#?}", ast, net);
+  assert!(net.reduce_step(&rule_book));
+  assert!(!net.reduce_step(&rule_book));
+  eprintln!("{:#?}", net);
+  eprintln!("net.active_pairs(): {:#?}", net.active_pairs());
+  Ok(())
 }
 
 #[test]
 fn test_reduce_inet_ctor_era() -> Result<(), MyError> {
-	let ast = Ast::parse(
-		"
+  let ast = Ast::parse(
+    "
 		agent A(a, b)
 		agent B(c, d)
 		agent Era
@@ -217,161 +208,161 @@ fn test_reduce_inet_ctor_era() -> Result<(), MyError> {
 		rule Era ~ Era =
 		init A(root, i) ~ B(j, h), i ~ Era, j ~ Era, h ~ Era
 		",
-	)
-	.unwrap();
-	let rule_book = ast.build_rulebook()?;
-	let mut net = ast.to_inet(&rule_book.agent_name_to_id);
-	net.validate();
-	eprintln!("{:#?}", net);
-	assert_eq!(net.active_pairs().len(), 1, "{}\n{:#?}", ast, net);
-	assert!(net.reduce_step(&rule_book));
-	assert!(net.reduce_step(&rule_book));
-	assert!(!net.reduce_step(&rule_book));
-	eprintln!("{:#?}", net);
-	eprintln!("net.active_pairs(): {:#?}", net.active_pairs());
-	assert_eq!(net.active_pairs(), vec![(0, 4)], "{}\n{:#?}", ast, net);
-	Ok(())
+  )
+  .unwrap();
+  let rule_book = ast.build_rulebook()?;
+  let mut net = ast.to_inet(&rule_book.agent_name_to_id);
+  net.validate();
+  eprintln!("{:#?}", net);
+  assert_eq!(net.active_pairs().len(), 1, "{}\n{:#?}", ast, net);
+  assert!(net.reduce_step(&rule_book));
+  assert!(net.reduce_step(&rule_book));
+  assert!(!net.reduce_step(&rule_book));
+  eprintln!("{:#?}", net);
+  eprintln!("net.active_pairs(): {:#?}", net.active_pairs());
+  assert_eq!(net.active_pairs(), vec![(0, 4)], "{}\n{:#?}", ast, net);
+  Ok(())
 }
 
 #[test]
 fn test_reduce_inet_link_self_principal() -> Result<(), MyError> {
-	let ast = Ast::parse(
-		"
+  let ast = Ast::parse(
+    "
 		agent A(a, b)
 		init A(root, i) ~ i
 		",
-	)
-	.unwrap();
-	let rule_book = ast.build_rulebook()?;
-	let mut net = ast.to_inet(&rule_book.agent_name_to_id);
-	net.validate();
-	eprintln!("{:#?}", net);
-	assert_eq!(net.active_pairs().len(), 0, "{}\n{:#?}", ast, net);
-	assert!(!net.reduce_step(&rule_book));
-	Ok(())
+  )
+  .unwrap();
+  let rule_book = ast.build_rulebook()?;
+  let mut net = ast.to_inet(&rule_book.agent_name_to_id);
+  net.validate();
+  eprintln!("{:#?}", net);
+  assert_eq!(net.active_pairs().len(), 0, "{}\n{:#?}", ast, net);
+  assert!(!net.reduce_step(&rule_book));
+  Ok(())
 }
 
 #[test]
 fn test_reduce_inet_link_self_aux() -> Result<(), MyError> {
-	let ast = Ast::parse(
-		"
+  let ast = Ast::parse(
+    "
 		agent A(a, b)
 		agent E
 		rule A(e, f) ~ A(g, h) = e ~ g, f ~ h
 		init A(root, i) ~ A(j, j), i ~ E
 		",
-	)
-	.unwrap();
-	let rule_book = ast.build_rulebook()?;
-	let mut net = ast.to_inet(&rule_book.agent_name_to_id);
-	net.validate();
-	assert_eq!(net.active_pairs().len(), 1, "{}\n{:#?}", ast, net);
-	assert!(net.reduce_step(&rule_book));
-	assert!(!net.reduce_step(&rule_book));
-	eprintln!("{:#?}", net);
-	Ok(())
+  )
+  .unwrap();
+  let rule_book = ast.build_rulebook()?;
+  let mut net = ast.to_inet(&rule_book.agent_name_to_id);
+  net.validate();
+  assert_eq!(net.active_pairs().len(), 1, "{}\n{:#?}", ast, net);
+  assert!(net.reduce_step(&rule_book));
+  assert!(!net.reduce_step(&rule_book));
+  eprintln!("{:#?}", net);
+  Ok(())
 }
 
 #[test]
 fn test_reduce_inet_link_self_double() -> Result<(), MyError> {
-	let ast = Ast::parse(
-		"
+  let ast = Ast::parse(
+    "
 		agent A(a, b)
 		agent E
 		rule A(e, f) ~ A(g, h) = e ~ g, f ~ h
 		init A(a, a) ~ A(b, b), root ~ E
 		",
-	)
-	.unwrap();
-	let rule_book = ast.build_rulebook()?;
-	let mut net = ast.to_inet(&rule_book.agent_name_to_id);
-	net.validate();
-	assert_eq!(net.active_pairs().len(), 2, "{}\n{:#?}", ast, net);
-	assert!(net.reduce_step(&rule_book));
-	assert!(!net.reduce_step(&rule_book));
-	eprintln!("{:#?}", net);
-	assert_eq!(net.active_pairs(), vec![(0, 3)], "{}\n{:#?}", ast, net);
-	Ok(())
+  )
+  .unwrap();
+  let rule_book = ast.build_rulebook()?;
+  let mut net = ast.to_inet(&rule_book.agent_name_to_id);
+  net.validate();
+  assert_eq!(net.active_pairs().len(), 2, "{}\n{:#?}", ast, net);
+  assert!(net.reduce_step(&rule_book));
+  assert!(!net.reduce_step(&rule_book));
+  eprintln!("{:#?}", net);
+  assert_eq!(net.active_pairs(), vec![(0, 3)], "{}\n{:#?}", ast, net);
+  Ok(())
 }
 
 #[test]
 fn test_reduce_inet_link_pair_single() -> Result<(), MyError> {
-	let ast = Ast::parse(
-		"
+  let ast = Ast::parse(
+    "
 		agent A(a, b)
 		agent E
 		rule A(e, f) ~ A(g, h) = e ~ g, f ~ h
 		init A(root, j) ~ A(j, i), i ~ E
 		",
-	)
-	.unwrap();
-	let rule_book = ast.build_rulebook()?;
-	let mut net = ast.to_inet(&rule_book.agent_name_to_id);
-	net.validate();
-	assert_eq!(net.active_pairs().len(), 1, "{}\n{:#?}", ast, net);
-	assert!(net.reduce_step(&rule_book));
-	assert!(!net.reduce_step(&rule_book));
-	eprintln!("{:#?}", net);
-	Ok(())
+  )
+  .unwrap();
+  let rule_book = ast.build_rulebook()?;
+  let mut net = ast.to_inet(&rule_book.agent_name_to_id);
+  net.validate();
+  assert_eq!(net.active_pairs().len(), 1, "{}\n{:#?}", ast, net);
+  assert!(net.reduce_step(&rule_book));
+  assert!(!net.reduce_step(&rule_book));
+  eprintln!("{:#?}", net);
+  Ok(())
 }
 
 #[test]
 fn test_reduce_inet_link_pair_double() -> Result<(), MyError> {
-	let ast = Ast::parse(
-		"
+  let ast = Ast::parse(
+    "
 		agent A(a, b)
 		agent E
 		rule A(e, f) ~ A(g, h) = e ~ g, f ~ h
 		init A(a, b) ~ A(a, b), root ~ E
 		",
-	)
-	.unwrap();
-	let rule_book = ast.build_rulebook()?;
-	let mut net = ast.to_inet(&rule_book.agent_name_to_id);
-	net.validate();
-	assert_eq!(net.active_pairs().len(), 2, "{}\n{:#?}", ast, net);
-	assert!(net.reduce_step(&rule_book));
-	assert!(!net.reduce_step(&rule_book));
-	eprintln!("{:#?}", net);
-	Ok(())
+  )
+  .unwrap();
+  let rule_book = ast.build_rulebook()?;
+  let mut net = ast.to_inet(&rule_book.agent_name_to_id);
+  net.validate();
+  assert_eq!(net.active_pairs().len(), 2, "{}\n{:#?}", ast, net);
+  assert!(net.reduce_step(&rule_book));
+  assert!(!net.reduce_step(&rule_book));
+  eprintln!("{:#?}", net);
+  Ok(())
 }
 
 #[test]
 fn test_inet_validate_basic() -> Result<(), MyError> {
-	let ast = Ast::parse(&format!(
-		"
+  let ast = Ast::parse(&format!(
+    "
 		agent A
 		init root ~ a, a ~ A
 		",
-	))
-	.unwrap();
-	let rule_book = ast.build_rulebook()?;
-	let net = ast.to_inet(&rule_book.agent_name_to_id);
-	eprintln!("{:#?}", net);
-	net.validate();
-	Ok(())
+  ))
+  .unwrap();
+  let rule_book = ast.build_rulebook()?;
+  let net = ast.to_inet(&rule_book.agent_name_to_id);
+  eprintln!("{:#?}", net);
+  net.validate();
+  Ok(())
 }
 
 #[test]
 fn test_inet_validate() -> Result<(), MyError> {
-	let ast = Ast::parse(
-		"
+  let ast = Ast::parse(
+    "
 		agent A
 		agent B(a, b)
 		init root ~ r, r ~ A, B(a, a) ~ b, b ~ c, c ~ B(d, d), B(e, f) ~ g, g ~ B(f, e)
 		",
-	)
-	.unwrap();
-	let rule_book = ast.build_rulebook()?;
-	let net = ast.to_inet(&rule_book.agent_name_to_id);
-	net.validate();
-	Ok(())
+  )
+  .unwrap();
+  let rule_book = ast.build_rulebook()?;
+  let net = ast.to_inet(&rule_book.agent_name_to_id);
+  net.validate();
+  Ok(())
 }
 
 #[test]
 fn test_inet_validate_transitive_connections() -> Result<(), MyError> {
-	let ast = Ast::parse(&format!(
-		"
+  let ast = Ast::parse(&format!(
+    "
 		agent A
 		agent B
 		agent C
@@ -379,61 +370,61 @@ fn test_inet_validate_transitive_connections() -> Result<(), MyError> {
 		// init root ~ a, b ~ c, a ~ b, c ~ A, d ~ B, d ~ C
 		init root ~ B, C ~ a, b ~ c, a ~ b, c ~ A
 		",
-	))
-	.unwrap();
-	let rule_book = ast.build_rulebook()?;
-	let net = ast.to_inet(&rule_book.agent_name_to_id);
-	eprintln!("{:#?}", net);
-	net.validate();
-	Ok(())
+  ))
+  .unwrap();
+  let rule_book = ast.build_rulebook()?;
+  let net = ast.to_inet(&rule_book.agent_name_to_id);
+  eprintln!("{:#?}", net);
+  net.validate();
+  Ok(())
 }
 
 #[test]
 fn test_inet_validate_transitive_connections_generated() -> Result<(), MyError> {
-	use rand::{seq::SliceRandom, thread_rng};
+  use rand::{seq::SliceRandom, thread_rng};
 
-	let last = 'd';
-	let mut connections = ('a' ..= last)
-		.tuple_windows()
-		.map(|(l, r)| Connection::new(Connector::Port(l.to_string()), Connector::Port(r.to_string())))
-		.collect_vec();
+  let last = 'd';
+  let mut connections = ('a' ..= last)
+    .tuple_windows()
+    .map(|(l, r)| Connection::new(Connector::Port(l.to_string()), Connector::Port(r.to_string())))
+    .collect_vec();
 
-	for _ in 0 .. 50 {
-		connections.shuffle(&mut thread_rng());
-		let connections = fmt_connections(&connections);
-		let ast = Ast::parse(&format!(
-			"
+  for _ in 0 .. 50 {
+    connections.shuffle(&mut thread_rng());
+    let connections = fmt_connections(&connections);
+    let ast = Ast::parse(&format!(
+      "
 			agent A
 			init root ~ a, {connections}, {last} ~ A
 			",
-		))
-		.unwrap();
-		let rule_book = ast.build_rulebook()?;
-		let net = ast.to_inet(&rule_book.agent_name_to_id);
-		net.validate();
-	}
-	Ok(())
+    ))
+    .unwrap();
+    let rule_book = ast.build_rulebook()?;
+    let net = ast.to_inet(&rule_book.agent_name_to_id);
+    net.validate();
+  }
+  Ok(())
 }
 
 #[test]
 fn test_duplicate_rule() {
-	let ast = Ast::parse(&format!(
-		"
+  let ast = Ast::parse(&format!(
+    "
 		agent A
 		agent B
 		rule A ~ B = A ~ B
 		rule B ~ A = A ~ B
 		init root ~ A
 		",
-	))
-	.unwrap();
-	assert!(ast.build_rulebook().is_err());
+  ))
+  .unwrap();
+  assert!(ast.build_rulebook().is_err());
 }
 
 #[test]
 fn test_read_back() -> Result<(), MyError> {
-	let ast = Ast::parse(
-		"
+  let ast = Ast::parse(
+    "
 		agent Zero
 		agent Succ(pred)
 		rule Succ(ret) ~ Zero = ret ~ Succ(Zero)
@@ -445,25 +436,25 @@ fn test_read_back() -> Result<(), MyError> {
 
 		init a ~ Succ(Zero), Add(root, a) ~ Succ(Succ(Succ(Zero)))
 		",
-	)
-	.unwrap();
-	let rule_book = ast.build_rulebook()?;
-	let mut net = ast.to_inet(&rule_book.agent_name_to_id);
-	net.validate();
-	net.reduce_full(&rule_book);
-	eprintln!("{:#?}", net);
-	let connections = net.read_back();
-	eprintln!("{}", fmt_connections(&connections));
-	let connections = unflatten_connections(connections);
-	let connections = fmt_nested_connections(&connections);
-	eprintln!("{}", connections);
-	assert_eq!(connections, "root ~ Succ(Succ(Succ(Succ(Zero))))");
-	Ok(())
+  )
+  .unwrap();
+  let rule_book = ast.build_rulebook()?;
+  let mut net = ast.to_inet(&rule_book.agent_name_to_id);
+  net.validate();
+  net.reduce_full(&rule_book);
+  eprintln!("{:#?}", net);
+  let connections = net.read_back();
+  eprintln!("{}", fmt_connections(&connections));
+  let connections = unflatten_connections(connections);
+  let connections = fmt_nested_connections(&connections);
+  eprintln!("{}", connections);
+  assert_eq!(connections, "root ~ Succ(Succ(Succ(Succ(Zero))))");
+  Ok(())
 }
 
 #[test]
 fn test_unary_arith() -> Result<(), MyError> {
-	let ast = Ast::parse(
+  let ast = Ast::parse(
 		"
 		agent Zero
 		agent Succ(pred)
@@ -542,21 +533,21 @@ fn test_unary_arith() -> Result<(), MyError> {
 		",
 	)
 	.unwrap();
-	let rule_book = ast.build_rulebook()?;
-	let mut net = ast.to_inet(&rule_book.agent_name_to_id);
-	net.validate();
-	net.reduce_full(&rule_book);
-	let connections = net.read_back();
-	let connections = unflatten_connections(connections);
-	let connections = fmt_nested_connections(&connections);
-	assert_eq!(connections, "root ~ T");
-	Ok(())
+  let rule_book = ast.build_rulebook()?;
+  let mut net = ast.to_inet(&rule_book.agent_name_to_id);
+  net.validate();
+  net.reduce_full(&rule_book);
+  let connections = net.read_back();
+  let connections = unflatten_connections(connections);
+  let connections = fmt_nested_connections(&connections);
+  assert_eq!(connections, "root ~ T");
+  Ok(())
 }
 
 #[test]
 fn test_lambda() -> Result<(), MyError> {
-	let ast = Ast::parse(
-		"
+  let ast = Ast::parse(
+    "
 		agent Era
 		agent Dup(a, b)
 		agent Sup(a, b)
@@ -608,21 +599,21 @@ fn test_lambda() -> Result<(), MyError> {
 			Dup(fn1, fn2) ~ fn,
 			Dup(fn1, fn2) ~ root,
 			",
-	)
-	.unwrap();
+  )
+  .unwrap();
 
-	let rule_book = ast.build_rulebook()?;
-	let mut net = ast.to_inet(&rule_book.agent_name_to_id);
-	net.validate();
-	for step in 0 .. {
-		let connections = net.read_back();
-		let connections = unflatten_connections(connections);
-		let connections = fmt_nested_connections(&connections);
-		eprintln!("{step:2}: {connections}");
-		if !net.reduce_step(&rule_book) {
-			assert_eq!(connections, "root ~ Dup(Lam(_4, _4), Lam(_2, _2))");
-			break;
-		}
-	}
-	Ok(())
+  let rule_book = ast.build_rulebook()?;
+  let mut net = ast.to_inet(&rule_book.agent_name_to_id);
+  net.validate();
+  for step in 0 .. {
+    let connections = net.read_back();
+    let connections = unflatten_connections(connections);
+    let connections = fmt_nested_connections(&connections);
+    eprintln!("{step:2}: {connections}");
+    if !net.reduce_step(&rule_book) {
+      assert_eq!(connections, "root ~ Dup(Lam(_4, _4), Lam(_2, _2))");
+      break;
+    }
+  }
+  Ok(())
 }
