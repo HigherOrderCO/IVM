@@ -71,8 +71,7 @@ impl Ast {
     });
 
     // Agent and rule definitions can be interleaved
-    #[derive(Debug, Clone)]
-    pub enum Definition {
+    enum Definition {
       Agent(Agent),
       Rule(Rule),
     }
@@ -100,6 +99,7 @@ impl Ast {
           let mut next_port_idx = 0;
           let (lhs, lhs_connections) = lhs.clone().flatten(&mut next_port_idx);
           let (rhs, rhs_connections) = rhs.clone().flatten(&mut next_port_idx);
+
           if !lhs_connections.is_empty() || !rhs_connections.is_empty() {
             Err(Rich::custom(span, format!("Rule LHS cannot match deeper than active pair, {}", span)))
           } else {

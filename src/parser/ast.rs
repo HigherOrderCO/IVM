@@ -84,8 +84,6 @@ pub struct Rule {
   pub rhs: Vec<Connection>,
 }
 
-// Parser
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Ast {
   pub(crate) agents: Vec<Agent>,
@@ -95,15 +93,19 @@ pub struct Ast {
 
 impl Ast {
   pub fn build_rulebook(&self) -> Result<RuleBook, MyError> {
-    let mut agent_ports = HashMap::new();
+    let mut agent_arity = HashMap::new();
+
     for Agent { agent, ports } in &self.agents {
-      if agent_ports.insert(agent, ports.len()).is_some() {
+      if agent_arity.insert(agent, ports.len()).is_some() {
         return Err(format!("Duplicate definition of agent `{}`", agent));
       }
     }
 
-    let validate_agent = |Agent { agent, ports }: &Agent| {
-      let &port_count = agent_ports.get(agent).ok_or_else(|| format!("Undefined agent `{}`", agent))?;
+    fn check_agent_arity(
+      Agent { agent, ports }: &Agent,
+      agent_arity: &HashMap<&PortName, usize>,
+    ) -> Result<(), MyError> {
+      let port_count = agent_arity[agent];
       if ports.len() != port_count {
         return Err(format!(
           "Agent `{}` has {} ports, but {} ports are linked to it",
@@ -113,77 +115,60 @@ impl Ast {
         ));
       }
       Ok(())
-    };
+    }
 
-    let validate_connections =
-      |rule: Option<&dyn Fn() -> String>,
-       connections: &[Connection],
-       mut port_name_occurrences: HashMap<PortName, usize>| {
-        for Connection { lhs, rhs } in connections {
-          {
-            let mut register_port_name_occurrence = |port_name: &PortName| {
-              let occurrences = port_name_occurrences.entry(port_name.to_owned()).or_insert(0);
-              *occurrences += 1;
-            };
+    fn validate_connections(
+      rule: Option<&dyn Fn() -> String>,
+      connections: &[Connection],
+      mut port_name_occurrences: HashMap<PortName, usize>,
+      agent_arity: &HashMap<&PortName, usize>,
+    ) -> Result<(), MyError> {
+      process_agents_and_ports(
+        connections,
+        |agent| check_agent_arity(agent, &agent_arity),
+        |port_name: &PortName| {
+          let occurrences = port_name_occurrences.entry(port_name.to_owned()).or_insert(0);
+          *occurrences += 1;
+          Ok(())
+        },
+      )?;
 
-            let mut validate_connector = {
-              |connector: &Connector| -> Result<(), MyError> {
-                match connector {
-                  Connector::Agent(agent) => {
-                    validate_agent(agent)?;
-                    for port in &agent.ports {
-                      register_port_name_occurrence(port);
-                    }
-                  }
-                  Connector::Port(port) => register_port_name_occurrence(port),
-                }
-                Ok(())
-              }
-            };
-
-            validate_connector(lhs)?;
-            validate_connector(rhs)?;
-          }
-        }
-        for (port_name, occurrences) in port_name_occurrences {
-          if port_name == ROOT_PORT_NAME {
-            match rule {
-              None => {
-                // Rule `init`
-                if occurrences != 1 {
-                  return Err(format!(
-                    "Port name `{ROOT_PORT_NAME}` occurs {} != 1 times in `{INIT_CONNECTIONS}` connections",
-                    occurrences
-                  ));
-                }
-              }
-              Some(rule) => {
+      // Check linearity restriction (each port must be referenced exactly twice)
+      // Except for root port, which must be referenced exactly once, but only in `init` connections
+      for (port_name, occurrences) in port_name_occurrences {
+        if port_name == ROOT_PORT_NAME {
+          match rule {
+            None => {
+              // Rule `init`
+              if occurrences != 1 {
                 return Err(format!(
-                  "Reserved port name `{ROOT_PORT_NAME}` not allowed in rule `{}`, only in `{INIT_CONNECTIONS}` connections",
-                  rule()
+                  "Port name `{ROOT_PORT_NAME}` occurs {} != 1 times in `{INIT_CONNECTIONS}` connections",
+                  occurrences
                 ));
               }
             }
-          } else {
-            let rule = || match rule {
-              None => INIT_CONNECTIONS.to_string(),
-              Some(rule) => rule(),
-            };
-            if occurrences != 2 {
+            Some(rule) => {
               return Err(format!(
-                "Port name `{}` occurs {} != 2 times in `{}`",
-                port_name,
-                occurrences,
+                "Reserved port name `{ROOT_PORT_NAME}` not allowed in rule `{}`, only in `{INIT_CONNECTIONS}` connections",
                 rule()
               ));
             }
           }
+        } else {
+          if occurrences != 2 {
+            let rule = match rule {
+              None => INIT_CONNECTIONS.to_string(),
+              Some(rule) => rule(),
+            };
+            return Err(format!("Port name `{}` occurs {} != 2 times in `{}`", port_name, occurrences, rule));
+          }
         }
-        Ok(())
-      };
+      }
+      Ok(())
+    }
 
     // Validate rules and build rule book
-    let agent_name_to_id = agent_ports
+    let agent_name_to_id = agent_arity
 			.keys()
 			.sorted()
 			.enumerate()
@@ -191,46 +176,53 @@ impl Ast {
 			.collect::<HashMap<AgentName, AgentId>>();
     let mut rule_book = RuleBook::new(agent_name_to_id);
     for rule in &self.rules {
-      let Rule { lhs: active_pair, rhs: rule_rhs } = rule;
-      let port_name_occurrences = {
-        // Validate LHS
-        let ActivePair { lhs, rhs } = active_pair;
-        validate_agent(lhs)?;
-        validate_agent(rhs)?;
-
-        let validate_agent_port_references = |side: &str, agent: &Agent| {
-          let port_names = agent.ports.iter().cloned().collect::<HashSet<_>>();
-          if port_names.len() < agent.ports.len() {
-            return Err(format!(
-              "Duplicate port names in agent `{}` in {} of active pair in rule `{}`",
-              agent.agent, side, rule
-            ));
-          }
-          Ok(port_names)
-        };
-        let port_names_in_lhs = validate_agent_port_references("LHS", &lhs)?;
-        let port_names_in_rhs = validate_agent_port_references("RHS", &rhs)?;
-        let intersection = port_names_in_lhs.intersection(&port_names_in_rhs).collect_vec();
-        if !intersection.is_empty() {
+      fn validate_agent_port_references(
+        side: &str,
+        agent: &Agent,
+        rule: &Rule,
+      ) -> Result<HashSet<PortName>, MyError> {
+        let port_names = agent.ports.iter().cloned().collect::<HashSet<_>>();
+        if port_names.len() < agent.ports.len() {
           return Err(format!(
-            "Cannot use the same port names ({:?}) on both sides of active pair in LHS of rule `{}`",
-            intersection, rule
+            "Duplicate port names in agent `{}` in {} of active pair in rule `{}`",
+            agent.agent, side, rule
           ));
         }
-        port_names_in_lhs
-          .into_iter()
-          .chain(port_names_in_rhs)
-          .map(|port| (port, 1))
-          .collect::<HashMap<_, _>>()
-      };
-      {
-        // Validate RHS
-        validate_connections(Some(&|| rule.to_string()), rule_rhs, port_name_occurrences)?;
+        Ok(port_names)
       }
+
+      let Rule { lhs: active_pair, rhs: rule_rhs } = rule;
+
+      // Validate LHS
+      let ActivePair { lhs, rhs } = active_pair;
+      check_agent_arity(lhs, &agent_arity)?;
+      check_agent_arity(rhs, &agent_arity)?;
+
+      // Ensure that sets of port names in LHS and RHS of active pair are disjoint
+      let port_names_in_lhs = validate_agent_port_references("LHS", &lhs, &rule)?;
+      let port_names_in_rhs = validate_agent_port_references("RHS", &rhs, &rule)?;
+      if !port_names_in_lhs.is_disjoint(&port_names_in_rhs) {
+        let intersection = port_names_in_lhs.intersection(&port_names_in_rhs).collect_vec();
+        return Err(format!(
+          "Cannot use the same port names ({:?}) on both sides of active pair in LHS of rule `{}`",
+          intersection, rule
+        ));
+      }
+
+      // Port names in active pair are external links in a rule's RHS net
+      let port_name_occurrences = port_names_in_lhs
+        .into_iter()
+        .chain(port_names_in_rhs)
+        .map(|port| (port, 1))
+        .collect::<HashMap<_, _>>();
+
+      // Validate RHS
+      validate_connections(Some(&|| rule.to_string()), rule_rhs, port_name_occurrences, &agent_arity)?;
+
       rule_book.add_rule(rule)?;
     }
 
-    validate_connections(None, &self.init, HashMap::new())?;
+    validate_connections(None, &self.init, HashMap::new(), &agent_arity)?;
 
     Ok(rule_book)
   }
@@ -249,4 +241,29 @@ impl Ast {
     net.add_connections(&self.init, external_links, agent_name_to_id);
     net
   }
+}
+
+pub fn process_agents_and_ports(
+  connections: &[Connection],
+  mut process_agent: impl FnMut(&Agent) -> Result<(), MyError>,
+  mut process_port: impl FnMut(&PortName) -> Result<(), MyError>,
+) -> Result<(), MyError> {
+  let mut process_connector = |connector: &Connector| -> Result<(), MyError> {
+    match connector {
+      Connector::Agent(agent) => {
+        process_agent(agent)?;
+        for port in &agent.ports {
+          process_port(port)?;
+        }
+      }
+      Connector::Port(port) => process_port(port)?,
+    }
+    Ok(())
+  };
+
+  for Connection { lhs, rhs } in connections {
+    process_connector(lhs)?;
+    process_connector(rhs)?;
+  }
+  Ok(())
 }
