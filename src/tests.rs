@@ -1,11 +1,11 @@
 use crate::{
+  error::IvmResult,
   lexer::*,
   parser::{
     ast::*,
     display::{fmt_connections, fmt_nested_connections},
     flatten::unflatten_connections,
   },
-  Error,
 };
 use chumsky::span::SimpleSpan;
 use itertools::Itertools;
@@ -38,8 +38,9 @@ fn test_parser() {
 
 		init root ~ Succ(Succ(Zero))
 		"
-    ),
-    Some(Ast {
+    )
+    .unwrap(),
+    Ast {
       agents: vec![Agent { agent: "Zero".to_string(), ports: vec![] }, Agent {
         agent: "Succ".to_string(),
         ports: vec!["pred".to_string()]
@@ -93,8 +94,9 @@ fn test_parser() {
           lhs: Connector::Port("_1".to_string()),
           rhs: Connector::Agent(Agent { agent: "Zero".to_string(), ports: vec![] })
         }
-      ]
-    })
+      ],
+      init_span: SimpleSpan::new(137, 165),
+    }
   );
 }
 
@@ -116,7 +118,7 @@ fn test_ast_validation() {
 }
 
 #[test]
-fn test_to_inet() -> Result<(), Error> {
+fn test_to_inet() -> IvmResult<()> {
   let src = "
     agent Zero()
     agent Succ(pred)
@@ -140,7 +142,7 @@ fn test_to_inet() -> Result<(), Error> {
 }
 
 #[test]
-fn test_reduce_inet() -> Result<(), Error> {
+fn test_reduce_inet() -> IvmResult<()> {
   let src = "
 		agent Zero()
 		agent Succ(pred)
@@ -168,7 +170,7 @@ fn test_reduce_inet() -> Result<(), Error> {
 }
 
 #[test]
-fn test_reduce_inet_basic() -> Result<(), Error> {
+fn test_reduce_inet_basic() -> IvmResult<()> {
   let src = "
 		agent A(a)
 		agent B
@@ -189,7 +191,7 @@ fn test_reduce_inet_basic() -> Result<(), Error> {
 }
 
 #[test]
-fn test_reduce_inet_ctor_era() -> Result<(), Error> {
+fn test_reduce_inet_ctor_era() -> IvmResult<()> {
   let src = "
 		agent A(a, b)
 		agent B(c, d)
@@ -214,7 +216,7 @@ fn test_reduce_inet_ctor_era() -> Result<(), Error> {
 }
 
 #[test]
-fn test_reduce_inet_link_self_principal() -> Result<(), Error> {
+fn test_reduce_inet_link_self_principal() -> IvmResult<()> {
   let src = "
 		agent A(a, b)
 		init A(root, i) ~ i
@@ -230,7 +232,7 @@ fn test_reduce_inet_link_self_principal() -> Result<(), Error> {
 }
 
 #[test]
-fn test_reduce_inet_link_self_aux() -> Result<(), Error> {
+fn test_reduce_inet_link_self_aux() -> IvmResult<()> {
   let src = "
 		agent A(a, b)
 		agent E
@@ -249,7 +251,7 @@ fn test_reduce_inet_link_self_aux() -> Result<(), Error> {
 }
 
 #[test]
-fn test_reduce_inet_link_self_double() -> Result<(), Error> {
+fn test_reduce_inet_link_self_double() -> IvmResult<()> {
   let src = "
 		agent A(a, b)
 		agent E
@@ -269,7 +271,7 @@ fn test_reduce_inet_link_self_double() -> Result<(), Error> {
 }
 
 #[test]
-fn test_reduce_inet_link_pair_single() -> Result<(), Error> {
+fn test_reduce_inet_link_pair_single() -> IvmResult<()> {
   let src = "
 		agent A(a, b)
 		agent E
@@ -288,7 +290,7 @@ fn test_reduce_inet_link_pair_single() -> Result<(), Error> {
 }
 
 #[test]
-fn test_reduce_inet_link_pair_double() -> Result<(), Error> {
+fn test_reduce_inet_link_pair_double() -> IvmResult<()> {
   let src = "
 		agent A(a, b)
 		agent E
@@ -307,7 +309,7 @@ fn test_reduce_inet_link_pair_double() -> Result<(), Error> {
 }
 
 #[test]
-fn test_inet_validate_basic() -> Result<(), Error> {
+fn test_inet_validate_basic() -> IvmResult<()> {
   let src = "
 		agent A
 		init root ~ a, a ~ A
@@ -321,7 +323,7 @@ fn test_inet_validate_basic() -> Result<(), Error> {
 }
 
 #[test]
-fn test_inet_validate() -> Result<(), Error> {
+fn test_inet_validate() -> IvmResult<()> {
   let src = "
 		agent A
 		agent B(a, b)
@@ -335,7 +337,7 @@ fn test_inet_validate() -> Result<(), Error> {
 }
 
 #[test]
-fn test_inet_validate_transitive_connections() -> Result<(), Error> {
+fn test_inet_validate_transitive_connections() -> IvmResult<()> {
   let src = "
 		agent A
 		agent B
@@ -353,7 +355,7 @@ fn test_inet_validate_transitive_connections() -> Result<(), Error> {
 }
 
 #[test]
-fn test_inet_validate_transitive_connections_generated() -> Result<(), Error> {
+fn test_inet_validate_transitive_connections_generated() -> IvmResult<()> {
   use rand::{seq::SliceRandom, thread_rng};
 
   let last = 'd';
@@ -393,7 +395,7 @@ fn test_duplicate_rule() {
 }
 
 #[test]
-fn test_read_back() -> Result<(), Error> {
+fn test_read_back() -> IvmResult<()> {
   let src = "
 		agent Zero
 		agent Succ(pred)
@@ -422,7 +424,7 @@ fn test_read_back() -> Result<(), Error> {
 }
 
 #[test]
-fn test_unary_arith() -> Result<(), Error> {
+fn test_unary_arith() -> IvmResult<()> {
   let src = "
     agent Zero
     agent Succ(pred)
@@ -512,7 +514,7 @@ fn test_unary_arith() -> Result<(), Error> {
 }
 
 #[test]
-fn test_lambda() -> Result<(), Error> {
+fn test_lambda() -> IvmResult<()> {
   let src = "
     agent Era
     agent Dup(a, b)
@@ -566,7 +568,6 @@ fn test_lambda() -> Result<(), Error> {
       Dup(fn1, fn2) ~ root,
   ";
   let ast = Ast::parse(src).unwrap();
-
   let rule_book = ast.build_rule_book(src)?;
   let mut net = ast.to_inet(&rule_book.agent_name_to_id);
   net.validate();

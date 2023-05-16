@@ -1,8 +1,9 @@
 use crate::{
+  error::IvmErrors,
   inet::{INet, NodeIdx},
   parser::ast::{ActivePair, AgentName, Connection, PortName, Rule},
-  Error,
 };
+use chumsky::prelude::Rich;
 use derive_new::new;
 use hashbrown::HashMap;
 use itertools::Itertools;
@@ -42,13 +43,14 @@ pub struct RuleBook {
 
 impl RuleBook {
   /// Insert into rule book and check for duplicate rules
-  pub fn add_rule(&mut self, rule: &Rule, rule_src: &str) -> Result<(), Error> {
-    let Rule { lhs: active_pair, rhs: rule_rhs, span: _ } = rule;
+  pub fn add_rule(&mut self, rule: &Rule, rule_src: &str, errors: &mut IvmErrors) {
+    let Rule { lhs: active_pair, rhs: rule_rhs, span } = rule;
 
     // Construct RuleLhs, ordered pair of agent IDs
     let ActivePair { lhs, rhs } = active_pair;
     let lhs_id = self.agent_name_to_id[&lhs.agent];
     let rhs_id = self.agent_name_to_id[&rhs.agent];
+    // Also order agents along with agent_id
     let ((lhs, rhs), (lhs_id, rhs_id)) =
       if lhs_id <= rhs_id { ((lhs, rhs), (lhs_id, rhs_id)) } else { ((rhs, lhs), (rhs_id, lhs_id)) };
     let key = (lhs_id, rhs_id); // Ordered pair
@@ -62,9 +64,8 @@ impl RuleBook {
       connections: rule_rhs.clone(),
     };
     if let Some(_) = self.rules.insert(key, value) {
-      return Err(format!("Duplicate rule for active pair `{active_pair}`: {rule_src}"));
+      errors.push(Rich::custom(*span, format!("Duplicate rule for active pair `{active_pair}`")));
     }
-    Ok(())
   }
 
   /// Apply rule to active pair if such a rule exists
@@ -74,6 +75,7 @@ impl RuleBook {
     let (node_idx_lhs, node_idx_rhs) = active_pair;
     let (lhs_node, rhs_node) = (&net[node_idx_lhs], &net[node_idx_rhs]);
     let (lhs_id, rhs_id) = (lhs_node.agent_id, rhs_node.agent_id);
+    // Also order nodes along with agent_id
     let ((lhs_node, rhs_node), (lhs_id, rhs_id)) = if lhs_id <= rhs_id {
       ((lhs_node, rhs_node), (lhs_id, rhs_id))
     } else {

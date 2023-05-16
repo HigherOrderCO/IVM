@@ -24,6 +24,7 @@ pub mod display;
 pub mod flatten;
 
 use crate::{
+  error::{convert_errors, IvmResult},
   lexer::Token,
   parser::{ast::*, display::fmt_connections, flatten::flatten_connections},
 };
@@ -70,7 +71,7 @@ impl Ast {
         .labelled("agent")
     });
 
-    // Agent and rule definitions can be interleaved
+    // Agent and rule definitions can be interleaved, but are separated before storing in Ast
     enum Definition {
       Agent(Agent),
       Rule(Rule),
@@ -116,8 +117,12 @@ impl Ast {
 
     let definition = agent_def.or(rule_def);
 
-    let ast = definition.repeated().at_least(1).collect::<Vec<_>>().then(init).validate(
-      |(definitions, init_connections), span, emitter| {
+    let ast = definition
+      .repeated()
+      .at_least(1)
+      .collect::<Vec<_>>()
+      .then(init.map_with_span(|init, init_span| (init, init_span)))
+      .validate(|(definitions, (init_connections, init_span)), span, emitter| {
         // Separate the interleaved agent and rule definitions
         let (agents, rules) = definitions.into_iter().partition_map(|def| match def {
           Definition::Agent(agent) => Either::Left(agent),
@@ -143,35 +148,15 @@ impl Ast {
           ));
         }
 
-        Ast { agents, rules, init: init_connections }
-      },
-    );
+        Ast { agents, rules, init: init_connections, init_span }
+      });
 
     ast
   }
 
-  // TODO: Return Result
-  pub fn parse(src: &str) -> Option<Self> {
-    use ariadne::{Color, Label, Report, ReportKind, Source};
-
+  pub fn parse(src: &str) -> IvmResult<Self> {
     let token_iter = Token::lexer(src).spanned().map(|(tok, span)| (tok, span.into()));
     let token_stream = Stream::from_iter(token_iter).spanned((src.len() .. src.len()).into());
-    match Self::parser().parse(token_stream).into_result() {
-      Ok(ast) => Some(ast),
-      Err(errs) => {
-        errs.into_iter().for_each(|e| {
-          Report::build(ReportKind::Error, (), e.span().start)
-            // .with_code(1)
-            .with_message(e.to_string())
-            .with_label(
-              Label::new(e.span().into_range()).with_message(e.reason().to_string()).with_color(Color::Red),
-            )
-            .finish()
-            .write(Source::from(src), std::io::stderr().lock())
-            .unwrap()
-        });
-        None
-      }
-    }
+    Self::parser().parse(token_stream).into_result().map_err(|e| convert_errors(e, src))
   }
 }
