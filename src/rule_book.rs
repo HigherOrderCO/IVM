@@ -1,7 +1,7 @@
 use crate::{
   inet::{INet, NodeIdx},
   parser::ast::{ActivePair, AgentName, Connection, PortName, Rule},
-  MyError,
+  Error,
 };
 use derive_new::new;
 use hashbrown::HashMap;
@@ -28,7 +28,7 @@ pub struct RuleBook {
 
 impl RuleBook {
   // Insert into rule book and check for duplicate rules
-  pub fn add_rule(&mut self, rule: &Rule) -> Result<(), MyError> {
+  pub fn add_rule(&mut self, rule: &Rule) -> Result<(), Error> {
     let Rule { lhs: active_pair, rhs: rule_rhs } = rule;
     let ActivePair { lhs, rhs } = active_pair;
     let lhs_id = *self.agent_name_to_id.get(&lhs.agent).unwrap();

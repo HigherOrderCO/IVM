@@ -1,7 +1,7 @@
 use crate::{
   inet::{port, INet, NodeIdx, NodePort},
   rule_book::{AgentId, RuleBook, ROOT_AGENT_ID},
-  MyError,
+  Error,
 };
 use derive_new::new;
 use hashbrown::{HashMap, HashSet};
@@ -92,7 +92,7 @@ pub struct Ast {
 }
 
 impl Ast {
-  pub fn build_rulebook(&self) -> Result<RuleBook, MyError> {
+  pub fn build_rulebook(&self) -> Result<RuleBook, Error> {
     let mut agent_arity = HashMap::new();
 
     for Agent { agent, ports } in &self.agents {
@@ -104,7 +104,7 @@ impl Ast {
     fn check_agent_arity(
       Agent { agent, ports }: &Agent,
       agent_arity: &HashMap<&PortName, usize>,
-    ) -> Result<(), MyError> {
+    ) -> Result<(), Error> {
       let port_count = agent_arity[agent];
       if ports.len() != port_count {
         return Err(format!(
@@ -122,7 +122,7 @@ impl Ast {
       connections: &[Connection],
       mut port_name_occurrences: HashMap<PortName, usize>,
       agent_arity: &HashMap<&PortName, usize>,
-    ) -> Result<(), MyError> {
+    ) -> Result<(), Error> {
       process_agents_and_ports(
         connections,
         |agent| check_agent_arity(agent, &agent_arity),
@@ -180,7 +180,7 @@ impl Ast {
         side: &str,
         agent: &Agent,
         rule: &Rule,
-      ) -> Result<HashSet<PortName>, MyError> {
+      ) -> Result<HashSet<PortName>, Error> {
         let port_names = agent.ports.iter().cloned().collect::<HashSet<_>>();
         if port_names.len() < agent.ports.len() {
           return Err(format!(
@@ -245,10 +245,10 @@ impl Ast {
 
 pub fn process_agents_and_ports(
   connections: &[Connection],
-  mut process_agent: impl FnMut(&Agent) -> Result<(), MyError>,
-  mut process_port: impl FnMut(&PortName) -> Result<(), MyError>,
-) -> Result<(), MyError> {
-  let mut process_connector = |connector: &Connector| -> Result<(), MyError> {
+  mut process_agent: impl FnMut(&Agent) -> Result<(), Error>,
+  mut process_port: impl FnMut(&PortName) -> Result<(), Error>,
+) -> Result<(), Error> {
+  let mut process_connector = |connector: &Connector| -> Result<(), Error> {
     match connector {
       Connector::Agent(agent) => {
         process_agent(agent)?;

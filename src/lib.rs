@@ -7,4 +7,4 @@ mod rule_book;
 #[cfg(test)]
 mod tests;
 
-type MyError = String; // TODO: Use stronger type
+type Error = String; // TODO: Use stronger type

@@ -5,7 +5,7 @@ use crate::{
     display::{fmt_connections, fmt_nested_connections},
     flatten::unflatten_connections,
   },
-  MyError,
+  Error,
 };
 use itertools::Itertools;
 use logos::Logos;
@@ -119,7 +119,7 @@ fn test_ast_validation() {
 }
 
 #[test]
-fn test_to_inet() -> Result<(), MyError> {
+fn test_to_inet() -> Result<(), Error> {
   let ast = Ast::parse(
     "
 		agent Zero()
@@ -145,7 +145,7 @@ fn test_to_inet() -> Result<(), MyError> {
 }
 
 #[test]
-fn test_reduce_inet() -> Result<(), MyError> {
+fn test_reduce_inet() -> Result<(), Error> {
   let ast = Ast::parse(
     "
 		agent Zero()
@@ -175,7 +175,7 @@ fn test_reduce_inet() -> Result<(), MyError> {
 }
 
 #[test]
-fn test_reduce_inet_basic() -> Result<(), MyError> {
+fn test_reduce_inet_basic() -> Result<(), Error> {
   let ast = Ast::parse(
     "
 		agent A(a)
@@ -198,7 +198,7 @@ fn test_reduce_inet_basic() -> Result<(), MyError> {
 }
 
 #[test]
-fn test_reduce_inet_ctor_era() -> Result<(), MyError> {
+fn test_reduce_inet_ctor_era() -> Result<(), Error> {
   let ast = Ast::parse(
     "
 		agent A(a, b)
@@ -225,7 +225,7 @@ fn test_reduce_inet_ctor_era() -> Result<(), MyError> {
 }
 
 #[test]
-fn test_reduce_inet_link_self_principal() -> Result<(), MyError> {
+fn test_reduce_inet_link_self_principal() -> Result<(), Error> {
   let ast = Ast::parse(
     "
 		agent A(a, b)
@@ -243,7 +243,7 @@ fn test_reduce_inet_link_self_principal() -> Result<(), MyError> {
 }
 
 #[test]
-fn test_reduce_inet_link_self_aux() -> Result<(), MyError> {
+fn test_reduce_inet_link_self_aux() -> Result<(), Error> {
   let ast = Ast::parse(
     "
 		agent A(a, b)
@@ -264,7 +264,7 @@ fn test_reduce_inet_link_self_aux() -> Result<(), MyError> {
 }
 
 #[test]
-fn test_reduce_inet_link_self_double() -> Result<(), MyError> {
+fn test_reduce_inet_link_self_double() -> Result<(), Error> {
   let ast = Ast::parse(
     "
 		agent A(a, b)
@@ -286,7 +286,7 @@ fn test_reduce_inet_link_self_double() -> Result<(), MyError> {
 }
 
 #[test]
-fn test_reduce_inet_link_pair_single() -> Result<(), MyError> {
+fn test_reduce_inet_link_pair_single() -> Result<(), Error> {
   let ast = Ast::parse(
     "
 		agent A(a, b)
@@ -307,7 +307,7 @@ fn test_reduce_inet_link_pair_single() -> Result<(), MyError> {
 }
 
 #[test]
-fn test_reduce_inet_link_pair_double() -> Result<(), MyError> {
+fn test_reduce_inet_link_pair_double() -> Result<(), Error> {
   let ast = Ast::parse(
     "
 		agent A(a, b)
@@ -328,7 +328,7 @@ fn test_reduce_inet_link_pair_double() -> Result<(), MyError> {
 }
 
 #[test]
-fn test_inet_validate_basic() -> Result<(), MyError> {
+fn test_inet_validate_basic() -> Result<(), Error> {
   let ast = Ast::parse(&format!(
     "
 		agent A
@@ -344,7 +344,7 @@ fn test_inet_validate_basic() -> Result<(), MyError> {
 }
 
 #[test]
-fn test_inet_validate() -> Result<(), MyError> {
+fn test_inet_validate() -> Result<(), Error> {
   let ast = Ast::parse(
     "
 		agent A
@@ -360,7 +360,7 @@ fn test_inet_validate() -> Result<(), MyError> {
 }
 
 #[test]
-fn test_inet_validate_transitive_connections() -> Result<(), MyError> {
+fn test_inet_validate_transitive_connections() -> Result<(), Error> {
   let ast = Ast::parse(&format!(
     "
 		agent A
@@ -380,7 +380,7 @@ fn test_inet_validate_transitive_connections() -> Result<(), MyError> {
 }
 
 #[test]
-fn test_inet_validate_transitive_connections_generated() -> Result<(), MyError> {
+fn test_inet_validate_transitive_connections_generated() -> Result<(), Error> {
   use rand::{seq::SliceRandom, thread_rng};
 
   let last = 'd';
@@ -422,7 +422,7 @@ fn test_duplicate_rule() {
 }
 
 #[test]
-fn test_read_back() -> Result<(), MyError> {
+fn test_read_back() -> Result<(), Error> {
   let ast = Ast::parse(
     "
 		agent Zero
@@ -453,7 +453,7 @@ fn test_read_back() -> Result<(), MyError> {
 }
 
 #[test]
-fn test_unary_arith() -> Result<(), MyError> {
+fn test_unary_arith() -> Result<(), Error> {
   let ast = Ast::parse(
 		"
 		agent Zero
@@ -545,7 +545,7 @@ fn test_unary_arith() -> Result<(), MyError> {
 }
 
 #[test]
-fn test_lambda() -> Result<(), MyError> {
+fn test_lambda() -> Result<(), Error> {
   let ast = Ast::parse(
     "
 		agent Era
