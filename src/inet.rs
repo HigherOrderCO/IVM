@@ -325,45 +325,60 @@ impl INet {
       .extend(ports_to_link.into_iter().map(|(port_name, node_port)| [Err(port_name), Ok(node_port)]));
     // At this point, `ports_to_link_later` contains all pairs of ports that still need to be linked
 
-    fn follow_links_until_port<'a>(
-      port_name: PortNameRef<'a>,
-      mut prev: MaybeLinkedPort<'a>,
-      ports_to_link_later: &[[MaybeLinkedPort<'a>; 2]],
-    ) -> Result<NodePort, PortNameRef<'a>> {
-      let mut port_to_find = Err(port_name);
-      while let Some(connector) = ports_to_link_later.iter().find_map(|[lhs, rhs]| {
-        // There are two matches in the list, one connection where we
-        // came from, and the other one is the one we want to visit
-        if lhs == &port_to_find {
-          (rhs != &prev).then_some(rhs)
-        } else if rhs == &port_to_find {
-          (lhs != &prev).then_some(lhs)
-        } else {
-          None
-        }
-      }) {
-        match connector {
-          Ok(node_port) => return Ok(*node_port),
-          _ => {
-            prev = port_to_find;
-            port_to_find = *connector;
-          }
-        }
-      }
-      port_to_find
-    }
-
-    fn lookup_port_name(
-      port_name: PortNameRef,
+    /// Find target of `port`. If it's Ok(port), return port.
+    /// If it's Err(name), do transitive lookup of name in `ports_to_link_later` and return the port.
+    fn target(
+      port: MaybeLinkedPort,
       prev: MaybeLinkedPort,
       ports_to_link_later: &[[MaybeLinkedPort; 2]],
     ) -> Result<NodePort, String> {
-      follow_links_until_port(port_name, prev, &ports_to_link_later)
-        .map_err(|_| format!("Port not found: `{}`", port_name))
-    }
-    let target = |port: MaybeLinkedPort, prev: MaybeLinkedPort, ports_to_link_later| {
+      fn lookup_port_name(
+        port_name: PortNameRef,
+        prev: MaybeLinkedPort,
+        ports_to_link_later: &[[MaybeLinkedPort; 2]],
+      ) -> Result<NodePort, String> {
+        /// Follows links in `ports_to_link_later` until it finds a port with the given name.
+        /// `prev` is the port we came from, so we don't follow links back to it.
+        /// This functions is used to find the other end of a connection.
+        /// E.g. when `ports_to_link_later` is [Ok(port) ~ Err(a), Err(a) ~ X, X ~ ...] and we call
+        /// `follow_links_until_port("a", Ok(port), ports_to_link_later)`, it will lookup the target of "a":
+        /// It won't follow the link Ok(port) ~ Err(a) but Err(a) ~ X
+        /// to find the other end of the connection that "a" transitsively connects to.
+        /// Then we can link `port` with the other end we found.
+        fn follow_links_until_port<'a>(
+          port_name: PortNameRef<'a>,
+          mut prev: MaybeLinkedPort<'a>,
+          ports_to_link_later: &[[MaybeLinkedPort<'a>; 2]],
+        ) -> Result<NodePort, PortNameRef<'a>> {
+          let mut port_to_find = Err(port_name);
+          while let Some(connector) = ports_to_link_later.iter().find_map(|[lhs, rhs]| {
+            // There are two matches in the list, one connection where we
+            // came from, and the other one is the one we want to visit
+            if lhs == &port_to_find {
+              (rhs != &prev).then_some(rhs)
+            } else if rhs == &port_to_find {
+              (lhs != &prev).then_some(lhs)
+            } else {
+              None
+            }
+          }) {
+            match connector {
+              Ok(node_port) => return Ok(*node_port),
+              _ => {
+                prev = port_to_find;
+                port_to_find = *connector;
+              }
+            }
+          }
+          port_to_find
+        }
+
+        follow_links_until_port(port_name, prev, &ports_to_link_later)
+          .map_err(|_| format!("Port not found: `{}`", port_name))
+      }
+
       port.or_else(|port_name| lookup_port_name(port_name, prev, ports_to_link_later))
-    };
+    }
 
     for [lhs, rhs] in &ports_to_link_later {
       match (lhs, rhs) {
