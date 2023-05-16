@@ -20,7 +20,7 @@ pub struct Node {
 }
 
 // Note: (0, 0) is default
-#[derive(Default, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Default, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NodePort {
   pub node_idx: NodeIdx,
   pub port_idx: PortIdx,
@@ -323,61 +323,68 @@ impl INet {
     // Also remember to link all external ports that were not linked yet
     ports_to_link_later
       .extend(ports_to_link.into_iter().map(|(port_name, node_port)| [Err(port_name), Ok(node_port)]));
-    // At this point, `ports_to_link_later` contains all pairs of ports that still need to be linked
+    // At this point, `ports_to_link_later` contains all pairs of ports that still need to be linked, these are linked below
+
+    type LinkGraph<'a> = HashMap<&'a MaybeLinkedPort<'a>, Vec<&'a MaybeLinkedPort<'a>>>; // Value Vec has len 2
+    let link_graph = ports_to_link_later
+      .iter()
+      .map(|[a, b]| (a, b))
+      .chain(ports_to_link_later.iter().map(|[a, b]| (b, a)))
+      .sorted()
+      .group_by(|(key, _values)| *key)
+      .into_iter()
+      .map(|(key, group)| (key, group.map(|(_key, value)| value).collect_vec()))
+      .collect::<LinkGraph>();
 
     /// Find target of `port`. If it's Ok(port), return port.
     /// If it's Err(name), do transitive lookup of name in `ports_to_link_later` and return the port.
     fn target(
       port: MaybeLinkedPort,
       prev: MaybeLinkedPort,
-      ports_to_link_later: &[[MaybeLinkedPort; 2]],
+      link_graph: &LinkGraph,
     ) -> Result<NodePort, String> {
       fn lookup_port_name(
         port_name: PortNameRef,
         prev: MaybeLinkedPort,
-        ports_to_link_later: &[[MaybeLinkedPort; 2]],
+        link_graph: &LinkGraph,
       ) -> Result<NodePort, String> {
-        /// Follows links in `ports_to_link_later` until it finds a port with the given name.
+        /// Follows links in `link_graph` until it finds a port with the given name.
         /// `prev` is the port we came from, so we don't follow links back to it.
         /// This functions is used to find the other end of a connection.
-        /// E.g. when `ports_to_link_later` is [Ok(port) ~ Err(a), Err(a) ~ X, X ~ ...] and we call
-        /// `follow_links_until_port("a", Ok(port), ports_to_link_later)`, it will lookup the target of "a":
+        /// E.g. when `link_graph` is [Ok(port) ~ Err(a), Err(a) ~ X, X ~ ...] and we call
+        /// `follow_links_until_port("a", Ok(port), link_graph)`, it will lookup the target of "a":
         /// It won't follow the link Ok(port) ~ Err(a) but Err(a) ~ X
         /// to find the other end of the connection that "a" transitsively connects to.
         /// Then we can link `port` with the other end we found.
         fn follow_links_until_port<'a>(
           port_name: PortNameRef<'a>,
           mut prev: MaybeLinkedPort<'a>,
-          ports_to_link_later: &[[MaybeLinkedPort<'a>; 2]],
+          link_graph: &'a LinkGraph,
         ) -> Result<NodePort, PortNameRef<'a>> {
           let mut port_to_find = Err(port_name);
-          while let Some(connector) = ports_to_link_later.iter().find_map(|[lhs, rhs]| {
-            // There are two matches in the list, one connection where we
-            // came from, and the other one is the one we want to visit
-            if lhs == &port_to_find {
-              (rhs != &prev).then_some(rhs)
-            } else if rhs == &port_to_find {
-              (lhs != &prev).then_some(lhs)
-            } else {
-              None
-            }
+          while let Some(connector) = link_graph.get(&port_to_find).and_then(|connectors| {
+            connectors.iter().find(|connector| {
+              // There are two matches, one connection where we
+              // came from, and the other one is the one we want to visit
+              ***connector != prev
+            })
           }) {
             match connector {
               Ok(node_port) => return Ok(*node_port),
               _ => {
                 prev = port_to_find;
-                port_to_find = *connector;
+                port_to_find = **connector;
               }
             }
           }
           port_to_find
         }
 
-        follow_links_until_port(port_name, prev, &ports_to_link_later)
+        follow_links_until_port(port_name, prev, &link_graph)
           .map_err(|_| format!("Port not found: `{}`", port_name))
       }
 
-      port.or_else(|port_name| lookup_port_name(port_name, prev, ports_to_link_later))
+      port.or_else(|port_name| lookup_port_name(port_name, prev, link_graph))
     }
 
     for [lhs, rhs] in &ports_to_link_later {
@@ -408,8 +415,8 @@ impl INet {
             unreachable!("{:?}", (lhs, rhs))
           };
           let prev = port_to_find; // Don't go to Err(a) after X
-          let target = target(port, prev, &ports_to_link_later).unwrap_or_else(|_| {
-            panic!("\nTarget not found for port: `{port_name}`\nports_to_link_later: {ports_to_link_later:?}")
+          let target = target(port, prev, &link_graph).unwrap_or_else(|_| {
+            panic!("\nTarget not found for port: `{port_name}`\nlink_graph: {link_graph:#?}");
           });
           self.link(node_port, target);
         }
