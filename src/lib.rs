@@ -7,4 +7,5 @@ mod rule_book;
 #[cfg(test)]
 mod tests;
 
-type Error = String; // TODO: Use stronger type
+// TODO: Use stronger type like extra::Err<Rich<'a, Token<'a>>> with Rich::custom()
+type Error = String;

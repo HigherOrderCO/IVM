@@ -5,8 +5,7 @@ edition = "2021"
 
 [dependencies]
 ariadne = "0.2.0"
-# chumsky = { version = "1.0.0-alpha.3", features = ["label"] }
-chumsky = { git = "https://github.com/zesterer/chumsky", rev = "49f1b84", features = ["label"] }
+chumsky = { version = "1.0.0-alpha.4", features = ["label"] }
 derive-new = "0.5.9"
 hashbrown = "0.13.2"
 itertools = "0.10.5"

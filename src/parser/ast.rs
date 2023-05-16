@@ -3,6 +3,7 @@ use crate::{
   rule_book::{AgentId, RuleBook, ROOT_AGENT_ID},
   Error,
 };
+use chumsky::span::SimpleSpan;
 use derive_new::new;
 use hashbrown::{HashMap, HashSet};
 use itertools::Itertools;
@@ -97,19 +98,21 @@ pub struct ActivePair {
 pub struct Rule {
   pub lhs: ActivePair,
   pub rhs: Vec<Connection>,
+  pub span: SimpleSpan, // Rule's source code, used for showing in error messages
 }
 
 /// AST of source file
 #[derive(Debug, Clone, PartialEq)]
 pub struct Ast {
-  pub(crate) agents: Vec<Agent>,
-  pub(crate) rules: Vec<Rule>,
-  pub(crate) init: Vec<Connection>,
+  pub agents: Vec<Agent>,
+  pub rules: Vec<Rule>,
+  pub init: Vec<Connection>,
 }
 
 impl Ast {
   /// Validate AST and build rule book from it
-  pub fn build_rule_book(&self) -> Result<RuleBook, Error> {
+  /// The `src` parameter is used for resolving spans for error messages
+  pub fn build_rule_book(&self, src: &str) -> Result<RuleBook, Error> {
     /// Check that agent usage has correct number of ports matching its declaration
     fn check_agent_arity(
       Agent { agent, ports }: &Agent,
@@ -130,8 +133,9 @@ impl Ast {
     /// Validate connections, either in a rule's RHS or in the initial net:
     /// Check linearity restriction (each port must be referenced exactly twice)
     /// Check that each agent usage has correct number of ports matching its declaration
+    /// `rule_src` is used for error messages, pass `None` when validating `init` connections
     fn validate_connections(
-      rule: Option<&dyn Fn() -> String>,
+      rule_src: Option<&str>,
       connections: &[Connection],
       mut port_name_occurrences: HashMap<PortName, usize>,
       agent_arity: &HashMap<&PortName, usize>,
@@ -151,30 +155,25 @@ impl Ast {
       // Except for root port, which must be referenced exactly once, but only in `init` connections
       for (port_name, occurrences) in port_name_occurrences {
         if port_name == ROOT_PORT_NAME {
-          match rule {
+          match rule_src {
             None => {
               // Rule `init`
               if occurrences != 1 {
                 return Err(format!(
-                  "Port name `{ROOT_PORT_NAME}` occurs {} != 1 times in `{INIT_CONNECTIONS}` connections",
-                  occurrences
+                  "Port name `{ROOT_PORT_NAME}` occurs {occurrences} != 1 times in `{INIT_CONNECTIONS}` connections",
                 ));
               }
             }
-            Some(rule) => {
+            Some(rule_src) => {
               return Err(format!(
-                "Reserved port name `{ROOT_PORT_NAME}` not allowed in rule `{}`, only in `{INIT_CONNECTIONS}` connections",
-                rule()
+                "Reserved port name `{ROOT_PORT_NAME}` not allowed in rule `{rule_src}`, only in `{INIT_CONNECTIONS}` connections",
               ));
             }
           }
         } else {
           if occurrences != 2 {
-            let rule = match rule {
-              None => INIT_CONNECTIONS.to_string(),
-              Some(rule) => rule(),
-            };
-            return Err(format!("Port name `{}` occurs {} != 2 times in `{}`", port_name, occurrences, rule));
+            let rule_src = rule_src.unwrap_or(INIT_CONNECTIONS);
+            return Err(format!("Port name `{port_name}` occurs {occurrences} != 2 times in `{rule_src}`"));
           }
         }
       }
@@ -208,20 +207,21 @@ impl Ast {
       fn validate_agent_port_references(
         side: &str,
         agent: &Agent,
-        rule: &Rule,
+        rule_src: &str,
       ) -> Result<HashSet<PortName>, Error> {
         let port_names = agent.ports.iter().cloned().collect::<HashSet<_>>();
         if port_names.len() < agent.ports.len() {
-          let duplicate_port_names = agent.ports.iter().duplicates().collect_vec();
+          let duplicate_port_names = agent.ports.iter().duplicates().join(", ");
           return Err(format!(
-            "Duplicate port names {duplicate_port_names:?} in agent `{}` in {side} of active pair in rule `{rule}`",
+            "Duplicate port names ({duplicate_port_names}) in agent `{}` in {side} of active pair in rule `{rule_src}`",
             agent.agent,
           ));
         }
         Ok(port_names)
       }
 
-      let Rule { lhs: active_pair, rhs: rule_rhs } = rule;
+      let Rule { lhs: active_pair, rhs: rule_rhs, span } = rule;
+      let rule_src = &src[span.into_range()];
 
       // Validate LHS
       let ActivePair { lhs, rhs } = active_pair;
@@ -229,16 +229,15 @@ impl Ast {
       check_agent_arity(rhs, &agent_arity)?;
 
       // Ensure that sets of port names in LHS and RHS of active pair are disjoint
-      let port_names_in_lhs = validate_agent_port_references("LHS", &lhs, &rule)?;
-      let port_names_in_rhs = validate_agent_port_references("RHS", &rhs, &rule)?;
+      let port_names_in_lhs = validate_agent_port_references("LHS", &lhs, rule_src)?;
+      let port_names_in_rhs = validate_agent_port_references("RHS", &rhs, rule_src)?;
 
       // Reject duplicate port names in active pair
       // E.g. A(c) ~ B(c) is invalid, port names in active pair must be distinct
       if !port_names_in_lhs.is_disjoint(&port_names_in_rhs) {
-        let intersection = port_names_in_lhs.intersection(&port_names_in_rhs).collect_vec();
+        let intersection = port_names_in_lhs.intersection(&port_names_in_rhs).join(", ");
         return Err(format!(
-          "Cannot use the same port names ({:?}) on both sides of active pair in LHS of rule `{}`",
-          intersection, rule
+          "Cannot use the same port names ({intersection}) on both sides of active pair in LHS of rule `{rule_src}`",
         ));
       }
 
@@ -250,10 +249,10 @@ impl Ast {
       let port_name_occurrences = port_names_in_active_pair.map(|port| (port, 1)).collect::<HashMap<_, _>>();
 
       // Validate RHS
-      validate_connections(Some(&|| rule.to_string()), rule_rhs, port_name_occurrences, &agent_arity)?;
+      validate_connections(Some(rule_src), rule_rhs, port_name_occurrences, &agent_arity)?;
 
       // Rule is valid
-      rule_book.add_rule(rule)?;
+      rule_book.add_rule(rule, rule_src)?;
     }
 
     // We validated the connections of all rules' RHS, now we validate the `init` connections

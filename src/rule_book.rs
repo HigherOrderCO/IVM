@@ -42,16 +42,19 @@ pub struct RuleBook {
 
 impl RuleBook {
   /// Insert into rule book and check for duplicate rules
-  pub fn add_rule(&mut self, rule: &Rule) -> Result<(), Error> {
-    let Rule { lhs: active_pair, rhs: rule_rhs } = rule;
+  pub fn add_rule(&mut self, rule: &Rule, rule_src: &str) -> Result<(), Error> {
+    let Rule { lhs: active_pair, rhs: rule_rhs, span: _ } = rule;
+
+    // Construct RuleLhs, ordered pair of agent IDs
     let ActivePair { lhs, rhs } = active_pair;
-    let lhs_id = *self.agent_name_to_id.get(&lhs.agent).unwrap();
-    let rhs_id = *self.agent_name_to_id.get(&rhs.agent).unwrap();
+    let lhs_id = self.agent_name_to_id[&lhs.agent];
+    let rhs_id = self.agent_name_to_id[&rhs.agent];
     let ((lhs, rhs), (lhs_id, rhs_id)) =
       if lhs_id <= rhs_id { ((lhs, rhs), (lhs_id, rhs_id)) } else { ((rhs, lhs), (rhs_id, lhs_id)) };
     let key = (lhs_id, rhs_id); // Ordered pair
+
     let value = RuleRhs {
-      rule_src: rule.to_string(),
+      rule_src: rule_src.to_owned(),
       port_idx_to_name: [
         lhs.ports.iter().map(|port_name| port_name.to_owned()).collect_vec(),
         rhs.ports.iter().map(|port_name| port_name.to_owned()).collect_vec(),
@@ -59,7 +62,7 @@ impl RuleBook {
       connections: rule_rhs.clone(),
     };
     if let Some(_) = self.rules.insert(key, value) {
-      return Err(format!("Duplicate rule for active pair `{active_pair}`: {rule}"));
+      return Err(format!("Duplicate rule for active pair `{active_pair}`: {rule_src}"));
     }
     Ok(())
   }
@@ -67,6 +70,7 @@ impl RuleBook {
   /// Apply rule to active pair if such a rule exists
   /// Returns true if a rule was applied
   pub fn apply(&self, net: &mut INet, active_pair: (NodeIdx, NodeIdx)) -> bool {
+    // Construct RuleLhs, ordered pair of agent IDs
     let (node_idx_lhs, node_idx_rhs) = active_pair;
     let (lhs_node, rhs_node) = (&net[node_idx_lhs], &net[node_idx_rhs]);
     let (lhs_id, rhs_id) = (lhs_node.agent_id, rhs_node.agent_id);
@@ -76,7 +80,8 @@ impl RuleBook {
       ((rhs_node, lhs_node), (rhs_id, lhs_id))
     };
     let key = (lhs_id, rhs_id); // Ordered pair
-    if let Some(RuleRhs { rule_src: rule, port_idx_to_name, connections }) = self.rules.get(&key) {
+
+    if let Some(RuleRhs { rule_src, port_idx_to_name, connections }) = self.rules.get(&key) {
       // eprintln!("Applying rule for active pair `{active_pair:?}`: {rule}");
 
       // Build external_links map from port name to NodePort in this net
@@ -92,8 +97,9 @@ impl RuleBook {
           debug_assert_eq!(
             node.ports.len(),
             port_idx_to_name.len() + 1,
-            "\n{net:#?}\n{rule}\n{node:?}, {port_idx_to_name:?}"
+            "\n{net:#?}\n{rule_src}\n{node:?}, {port_idx_to_name:?}"
           );
+
           // Skip principal port, we only have names for auxiliary ports
           node
             .ports

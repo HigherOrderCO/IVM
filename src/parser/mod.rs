@@ -104,7 +104,7 @@ impl Ast {
             Err(Rich::custom(span, format!("Rule LHS cannot match deeper than active pair, {}", span)))
           } else {
             let lhs = ActivePair { lhs, rhs };
-            Ok(Definition::Rule(Rule { lhs, rhs: flatten_connections(rule_rhs) }))
+            Ok(Definition::Rule(Rule { lhs, rhs: flatten_connections(rule_rhs), span }))
           }
         } else {
           Err(Rich::custom(span, format!("Rule LHS must be an active pair, not {}", span)))
@@ -124,6 +124,7 @@ impl Ast {
           Definition::Rule(rule) => Either::Right(rule),
         });
 
+        // Nesting is syntactic sugar, flatten all connections for further processing
         let init_connections = flatten_connections(init_connections);
 
         // Root port must be referenced exactly once
@@ -160,7 +161,7 @@ impl Ast {
       Err(errs) => {
         errs.into_iter().for_each(|e| {
           Report::build(ReportKind::Error, (), e.span().start)
-            .with_code(3)
+            // .with_code(1)
             .with_message(e.to_string())
             .with_label(
               Label::new(e.span().into_range()).with_message(e.reason().to_string()).with_color(Color::Red),

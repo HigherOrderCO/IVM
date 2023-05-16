@@ -7,6 +7,7 @@ use crate::{
   },
   Error,
 };
+use chumsky::span::SimpleSpan;
 use itertools::Itertools;
 use logos::Logos;
 
@@ -47,7 +48,7 @@ fn test_parser() {
         Rule {
           lhs: ActivePair {
             lhs: Agent { agent: "Succ".to_string(), ports: vec!["ret".to_string()] },
-            rhs: Agent { agent: "Zero".to_string(), ports: vec![] }
+            rhs: Agent { agent: "Zero".to_string(), ports: vec![] },
           },
           rhs: vec![
             Connection {
@@ -58,7 +59,8 @@ fn test_parser() {
               lhs: Connector::Port("_0".to_string()),
               rhs: Connector::Agent(Agent { agent: "Zero".to_string(), ports: vec![] })
             }
-          ]
+          ],
+          span: SimpleSpan::new(44, 84),
         },
         Rule {
           lhs: ActivePair {
@@ -74,7 +76,8 @@ fn test_parser() {
               lhs: Connector::Port("_0".to_string()),
               rhs: Connector::Agent(Agent { agent: "Succ".to_string(), ports: vec!["p".to_string()] })
             }
-          ]
+          ],
+          span: SimpleSpan::new(87, 133),
         }
       ],
       init: vec![
@@ -97,45 +100,37 @@ fn test_parser() {
 
 #[test]
 fn test_ast_validation() {
-  assert!(
-    Ast::parse(
-      "
-		agent Zero()
-		agent Succ(pred)
-		rule Succ(ret) ~ Zero = ret ~ Succ(Zero)
-		rule Succ(ret) ~ Succ(p) = ret ~ Succ(Succ(p))
+  let src = "
+    agent Zero()
+    agent Succ(pred)
+    rule Succ(ret) ~ Zero = ret ~ Succ(Zero)
+    rule Succ(ret) ~ Succ(p) = ret ~ Succ(Succ(p))
 
-		agent Add(a, b)
-		rule Add(ret, a) ~ Zero = ret ~ a
-		rule Add(ret, a) ~ Succ(b) = ret ~ Succ(cnt), Add(cnt, a) ~ b
+    agent Add(a, b)
+    rule Add(ret, a) ~ Zero = ret ~ a
+    rule Add(ret, a) ~ Succ(b) = ret ~ Succ(cnt), Add(cnt, a) ~ b
 
-		init a ~ Succ(Zero), Add(root, a) ~ Succ(Succ(Succ(Zero)))
-		"
-    )
-    .unwrap()
-    .build_rule_book()
-    .is_ok()
-  );
+    init a ~ Succ(Zero), Add(root, a) ~ Succ(Succ(Succ(Zero)))
+  ";
+  assert!(Ast::parse(src).unwrap().build_rule_book(src).is_ok());
 }
 
 #[test]
 fn test_to_inet() -> Result<(), Error> {
-  let ast = Ast::parse(
-    "
-		agent Zero()
-		agent Succ(pred)
-		rule Succ(ret) ~ Zero = ret ~ Succ(Zero)
-		rule Succ(ret) ~ Succ(p) = ret ~ Succ(Succ(p))
+  let src = "
+    agent Zero()
+    agent Succ(pred)
+    rule Succ(ret) ~ Zero = ret ~ Succ(Zero)
+    rule Succ(ret) ~ Succ(p) = ret ~ Succ(Succ(p))
 
-		agent Add(a, b)
-		rule Add(ret, a) ~ Zero = ret ~ a
-		rule Add(ret, a) ~ Succ(b) = ret ~ Succ(cnt), Add(cnt, a) ~ b
+    agent Add(a, b)
+    rule Add(ret, a) ~ Zero = ret ~ a
+    rule Add(ret, a) ~ Succ(b) = ret ~ Succ(cnt), Add(cnt, a) ~ b
 
-		init a ~ Succ(Zero), Add(root, a) ~ Succ(Succ(Succ(Zero)))
-		",
-  )
-  .unwrap();
-  let rule_book = ast.build_rule_book()?;
+    init a ~ Succ(Zero), Add(root, a) ~ Succ(Succ(Succ(Zero)))
+  ";
+  let ast = Ast::parse(src).unwrap();
+  let rule_book = ast.build_rule_book(src)?;
   let mut net = ast.to_inet(&rule_book.agent_name_to_id);
   net.validate();
   eprintln!("{:#?}", net);
@@ -146,8 +141,7 @@ fn test_to_inet() -> Result<(), Error> {
 
 #[test]
 fn test_reduce_inet() -> Result<(), Error> {
-  let ast = Ast::parse(
-    "
+  let src = "
 		agent Zero()
 		agent Succ(pred)
 		rule Succ(ret) ~ Zero = ret ~ Succ(Zero)
@@ -158,10 +152,9 @@ fn test_reduce_inet() -> Result<(), Error> {
 		rule Add(ret, a) ~ Succ(b) = ret ~ Succ(cnt), Add(cnt, a) ~ b
 
 		init Add(root, Zero) ~ Zero
-		",
-  )
-  .unwrap();
-  let rule_book = ast.build_rule_book()?;
+  ";
+  let ast = Ast::parse(src).unwrap();
+  let rule_book = ast.build_rule_book(src)?;
   let mut net = ast.to_inet(&rule_book.agent_name_to_id);
   net.validate();
   eprintln!("{:#?}", net);
@@ -176,16 +169,14 @@ fn test_reduce_inet() -> Result<(), Error> {
 
 #[test]
 fn test_reduce_inet_basic() -> Result<(), Error> {
-  let ast = Ast::parse(
-    "
+  let src = "
 		agent A(a)
 		agent B
 		rule A(a) ~ B = a ~ B
 		init A(root) ~ B
-		",
-  )
-  .unwrap();
-  let rule_book = ast.build_rule_book()?;
+  ";
+  let ast = Ast::parse(src).unwrap();
+  let rule_book = ast.build_rule_book(src)?;
   let mut net = ast.to_inet(&rule_book.agent_name_to_id);
   net.validate();
   eprintln!("{:#?}", net);
@@ -199,18 +190,16 @@ fn test_reduce_inet_basic() -> Result<(), Error> {
 
 #[test]
 fn test_reduce_inet_ctor_era() -> Result<(), Error> {
-  let ast = Ast::parse(
-    "
+  let src = "
 		agent A(a, b)
 		agent B(c, d)
 		agent Era
 		rule A(e, f) ~ B(g, h) = e ~ g, f ~ h
 		rule Era ~ Era =
 		init A(root, i) ~ B(j, h), i ~ Era, j ~ Era, h ~ Era
-		",
-  )
-  .unwrap();
-  let rule_book = ast.build_rule_book()?;
+  ";
+  let ast = Ast::parse(src).unwrap();
+  let rule_book = ast.build_rule_book(src)?;
   let mut net = ast.to_inet(&rule_book.agent_name_to_id);
   net.validate();
   eprintln!("{:#?}", net);
@@ -226,14 +215,12 @@ fn test_reduce_inet_ctor_era() -> Result<(), Error> {
 
 #[test]
 fn test_reduce_inet_link_self_principal() -> Result<(), Error> {
-  let ast = Ast::parse(
-    "
+  let src = "
 		agent A(a, b)
 		init A(root, i) ~ i
-		",
-  )
-  .unwrap();
-  let rule_book = ast.build_rule_book()?;
+  ";
+  let ast = Ast::parse(src).unwrap();
+  let rule_book = ast.build_rule_book(src)?;
   let mut net = ast.to_inet(&rule_book.agent_name_to_id);
   net.validate();
   eprintln!("{:#?}", net);
@@ -244,16 +231,14 @@ fn test_reduce_inet_link_self_principal() -> Result<(), Error> {
 
 #[test]
 fn test_reduce_inet_link_self_aux() -> Result<(), Error> {
-  let ast = Ast::parse(
-    "
+  let src = "
 		agent A(a, b)
 		agent E
 		rule A(e, f) ~ A(g, h) = e ~ g, f ~ h
 		init A(root, i) ~ A(j, j), i ~ E
-		",
-  )
-  .unwrap();
-  let rule_book = ast.build_rule_book()?;
+  ";
+  let ast = Ast::parse(src).unwrap();
+  let rule_book = ast.build_rule_book(src)?;
   let mut net = ast.to_inet(&rule_book.agent_name_to_id);
   net.validate();
   assert_eq!(net.active_pairs().len(), 1, "{}\n{:#?}", ast, net);
@@ -265,16 +250,14 @@ fn test_reduce_inet_link_self_aux() -> Result<(), Error> {
 
 #[test]
 fn test_reduce_inet_link_self_double() -> Result<(), Error> {
-  let ast = Ast::parse(
-    "
+  let src = "
 		agent A(a, b)
 		agent E
 		rule A(e, f) ~ A(g, h) = e ~ g, f ~ h
 		init A(a, a) ~ A(b, b), root ~ E
-		",
-  )
-  .unwrap();
-  let rule_book = ast.build_rule_book()?;
+  ";
+  let ast = Ast::parse(src).unwrap();
+  let rule_book = ast.build_rule_book(src)?;
   let mut net = ast.to_inet(&rule_book.agent_name_to_id);
   net.validate();
   assert_eq!(net.active_pairs().len(), 2, "{}\n{:#?}", ast, net);
@@ -287,16 +270,14 @@ fn test_reduce_inet_link_self_double() -> Result<(), Error> {
 
 #[test]
 fn test_reduce_inet_link_pair_single() -> Result<(), Error> {
-  let ast = Ast::parse(
-    "
+  let src = "
 		agent A(a, b)
 		agent E
 		rule A(e, f) ~ A(g, h) = e ~ g, f ~ h
 		init A(root, j) ~ A(j, i), i ~ E
-		",
-  )
-  .unwrap();
-  let rule_book = ast.build_rule_book()?;
+  ";
+  let ast = Ast::parse(src).unwrap();
+  let rule_book = ast.build_rule_book(src)?;
   let mut net = ast.to_inet(&rule_book.agent_name_to_id);
   net.validate();
   assert_eq!(net.active_pairs().len(), 1, "{}\n{:#?}", ast, net);
@@ -308,16 +289,14 @@ fn test_reduce_inet_link_pair_single() -> Result<(), Error> {
 
 #[test]
 fn test_reduce_inet_link_pair_double() -> Result<(), Error> {
-  let ast = Ast::parse(
-    "
+  let src = "
 		agent A(a, b)
 		agent E
 		rule A(e, f) ~ A(g, h) = e ~ g, f ~ h
 		init A(a, b) ~ A(a, b), root ~ E
-		",
-  )
-  .unwrap();
-  let rule_book = ast.build_rule_book()?;
+  ";
+  let ast = Ast::parse(src).unwrap();
+  let rule_book = ast.build_rule_book(src)?;
   let mut net = ast.to_inet(&rule_book.agent_name_to_id);
   net.validate();
   assert_eq!(net.active_pairs().len(), 2, "{}\n{:#?}", ast, net);
@@ -329,14 +308,12 @@ fn test_reduce_inet_link_pair_double() -> Result<(), Error> {
 
 #[test]
 fn test_inet_validate_basic() -> Result<(), Error> {
-  let ast = Ast::parse(&format!(
-    "
+  let src = "
 		agent A
 		init root ~ a, a ~ A
-		",
-  ))
-  .unwrap();
-  let rule_book = ast.build_rule_book()?;
+  ";
+  let ast = Ast::parse(src).unwrap();
+  let rule_book = ast.build_rule_book(src)?;
   let net = ast.to_inet(&rule_book.agent_name_to_id);
   eprintln!("{:#?}", net);
   net.validate();
@@ -345,15 +322,13 @@ fn test_inet_validate_basic() -> Result<(), Error> {
 
 #[test]
 fn test_inet_validate() -> Result<(), Error> {
-  let ast = Ast::parse(
-    "
+  let src = "
 		agent A
 		agent B(a, b)
 		init root ~ r, r ~ A, B(a, a) ~ b, b ~ c, c ~ B(d, d), B(e, f) ~ g, g ~ B(f, e)
-		",
-  )
-  .unwrap();
-  let rule_book = ast.build_rule_book()?;
+  ";
+  let ast = Ast::parse(src).unwrap();
+  let rule_book = ast.build_rule_book(src)?;
   let net = ast.to_inet(&rule_book.agent_name_to_id);
   net.validate();
   Ok(())
@@ -361,18 +336,16 @@ fn test_inet_validate() -> Result<(), Error> {
 
 #[test]
 fn test_inet_validate_transitive_connections() -> Result<(), Error> {
-  let ast = Ast::parse(&format!(
-    "
+  let src = "
 		agent A
 		agent B
 		agent C
 		// init root ~ a, b ~ c, a ~ b, c ~ A
 		// init root ~ a, b ~ c, a ~ b, c ~ A, d ~ B, d ~ C
 		init root ~ B, C ~ a, b ~ c, a ~ b, c ~ A
-		",
-  ))
-  .unwrap();
-  let rule_book = ast.build_rule_book()?;
+  ";
+  let ast = Ast::parse(src).unwrap();
+  let rule_book = ast.build_rule_book(src)?;
   let net = ast.to_inet(&rule_book.agent_name_to_id);
   eprintln!("{:#?}", net);
   net.validate();
@@ -392,14 +365,14 @@ fn test_inet_validate_transitive_connections_generated() -> Result<(), Error> {
   for _ in 0 .. 50 {
     connections.shuffle(&mut thread_rng());
     let connections = fmt_connections(&connections);
-    let ast = Ast::parse(&format!(
+    let src = &format!(
       "
 			agent A
 			init root ~ a, {connections}, {last} ~ A
-			",
-    ))
-    .unwrap();
-    let rule_book = ast.build_rule_book()?;
+    "
+    );
+    let ast = Ast::parse(src).unwrap();
+    let rule_book = ast.build_rule_book(src)?;
     let net = ast.to_inet(&rule_book.agent_name_to_id);
     net.validate();
   }
@@ -408,23 +381,20 @@ fn test_inet_validate_transitive_connections_generated() -> Result<(), Error> {
 
 #[test]
 fn test_duplicate_rule() {
-  let ast = Ast::parse(&format!(
-    "
+  let src = "
 		agent A
 		agent B
 		rule A ~ B = A ~ B
 		rule B ~ A = A ~ B
 		init root ~ A
-		",
-  ))
-  .unwrap();
-  assert!(ast.build_rule_book().is_err());
+  ";
+  let ast = Ast::parse(src).unwrap();
+  assert!(ast.build_rule_book(src).is_err());
 }
 
 #[test]
 fn test_read_back() -> Result<(), Error> {
-  let ast = Ast::parse(
-    "
+  let src = "
 		agent Zero
 		agent Succ(pred)
 		rule Succ(ret) ~ Zero = ret ~ Succ(Zero)
@@ -435,10 +405,9 @@ fn test_read_back() -> Result<(), Error> {
 		rule Add(ret, a) ~ Succ(b) = ret ~ Succ(cnt), Add(cnt, a) ~ b
 
 		init a ~ Succ(Zero), Add(root, a) ~ Succ(Succ(Succ(Zero)))
-		",
-  )
-  .unwrap();
-  let rule_book = ast.build_rule_book()?;
+  ";
+  let ast = Ast::parse(src).unwrap();
+  let rule_book = ast.build_rule_book(src)?;
   let mut net = ast.to_inet(&rule_book.agent_name_to_id);
   net.validate();
   net.reduce_full(&rule_book);
@@ -454,86 +423,84 @@ fn test_read_back() -> Result<(), Error> {
 
 #[test]
 fn test_unary_arith() -> Result<(), Error> {
-  let ast = Ast::parse(
-		"
-		agent Zero
-		agent Succ(pred)
-		rule Succ(ret) ~ Zero = ret ~ Succ(Zero)
-		rule Succ(ret) ~ Succ(p) = ret ~ Succ(Succ(p))
+  let src = "
+    agent Zero
+    agent Succ(pred)
+    rule Succ(ret) ~ Zero = ret ~ Succ(Zero)
+    rule Succ(ret) ~ Succ(p) = ret ~ Succ(Succ(p))
 
-		agent Add(a, b)
-		rule Add(ret, a) ~ Zero = ret ~ a
-		rule Add(ret, a) ~ Succ(b) = ret ~ Succ(cnt), Add(cnt, a) ~ b
+    agent Add(a, b)
+    rule Add(ret, a) ~ Zero = ret ~ a
+    rule Add(ret, a) ~ Succ(b) = ret ~ Succ(cnt), Add(cnt, a) ~ b
 
-		agent Era
-		rule Era ~ Zero =
-		rule Era ~ Succ(p) = Era ~ p
+    agent Era
+    rule Era ~ Zero =
+    rule Era ~ Succ(p) = Era ~ p
 
-		agent Dup(a, b)
-		rule Dup(a, b) ~ Zero = a ~ Zero, b ~ Zero
-		rule Dup(a, b) ~ Succ(p) = a ~ Succ(a2), b ~ Succ(b2), Dup(a2, b2) ~ p
+    agent Dup(a, b)
+    rule Dup(a, b) ~ Zero = a ~ Zero, b ~ Zero
+    rule Dup(a, b) ~ Succ(p) = a ~ Succ(a2), b ~ Succ(b2), Dup(a2, b2) ~ p
 
-		agent Mul(a, b)
-		rule Mul(ret, a) ~ Zero = ret ~ Zero, a ~ Era
-		rule Mul(ret, a) ~ Succ(b) = Dup(a2, a3) ~ a, Add(ret, cnt) ~ a2, Mul(cnt, a3) ~ b
+    agent Mul(a, b)
+    rule Mul(ret, a) ~ Zero = ret ~ Zero, a ~ Era
+    rule Mul(ret, a) ~ Succ(b) = Dup(a2, a3) ~ a, Add(ret, cnt) ~ a2, Mul(cnt, a3) ~ b
 
-		agent T
-		agent F
+    agent T
+    agent F
 
-		rule Era ~ T =
-		rule Era ~ F =
+    rule Era ~ T =
+    rule Era ~ F =
 
-		agent IsZero(ret)
-		rule IsZero(ret) ~ Zero = ret ~ T
-		rule IsZero(ret) ~ Succ(a) = ret ~ F, a ~ Era
+    agent IsZero(ret)
+    rule IsZero(ret) ~ Zero = ret ~ T
+    rule IsZero(ret) ~ Succ(a) = ret ~ F, a ~ Era
 
-		agent Pred(ret)
-		rule Pred(ret) ~ Zero = ret ~ Zero
-		rule Pred(ret) ~ Succ(p) = ret ~ p
+    agent Pred(ret)
+    rule Pred(ret) ~ Zero = ret ~ Zero
+    rule Pred(ret) ~ Succ(p) = ret ~ p
 
-		agent Sub(ret, a)
-		rule Sub(ret, a) ~ Zero = ret ~ a
-		rule Sub(ret, a) ~ Succ(b) = Pred(pa) ~ a, Sub(ret, pa) ~ b,
+    agent Sub(ret, a)
+    rule Sub(ret, a) ~ Zero = ret ~ a
+    rule Sub(ret, a) ~ Succ(b) = Pred(pa) ~ a, Sub(ret, pa) ~ b,
 
-		agent AbsDiff(ret, a)
-		// rule AbsDiff(ret, a) ~ b = Add(ret, x) ~ y, Sub(x, a) ~ b, Sub(y, b) ~ a
-		rule AbsDiff(ret, a) ~ Zero = Add(ret, x) ~ y, Sub(x, a2) ~ Zero, Sub(y, Zero) ~ a3, Dup(a2, a3) ~ a
-		rule AbsDiff(ret, a) ~ Succ(b) = Add(ret, x) ~ y, Sub(x, a2) ~ Succ(b2), Sub(y, Succ(b3)) ~ a3, Dup(a2, a3) ~ a, Dup(b2, b3) ~ b
+    agent AbsDiff(ret, a)
+    // rule AbsDiff(ret, a) ~ b = Add(ret, x) ~ y, Sub(x, a) ~ b, Sub(y, b) ~ a
+    rule AbsDiff(ret, a) ~ Zero = Add(ret, x) ~ y, Sub(x, a2) ~ Zero, Sub(y, Zero) ~ a3, Dup(a2, a3) ~ a
+    rule AbsDiff(ret, a) ~ Succ(b) = Add(ret, x) ~ y, Sub(x, a2) ~ Succ(b2), Sub(y, Succ(b3)) ~ a3, Dup(a2, a3) ~ a, Dup(b2, b3) ~ b
 
-		agent Eq(ret, a)
-		// rule Eq(ret, a) ~ b = IsZero(ret) ~ d, AbsDiff(d, a) ~ b
-		rule Eq(ret, a) ~ Zero = IsZero(ret) ~ d, AbsDiff(d, a) ~ Zero
-		rule Eq(ret, a) ~ Succ(b) = IsZero(ret) ~ d, AbsDiff(d, a) ~ Succ(b)
+    agent Eq(ret, a)
+    // rule Eq(ret, a) ~ b = IsZero(ret) ~ d, AbsDiff(d, a) ~ b
+    rule Eq(ret, a) ~ Zero = IsZero(ret) ~ d, AbsDiff(d, a) ~ Zero
+    rule Eq(ret, a) ~ Succ(b) = IsZero(ret) ~ d, AbsDiff(d, a) ~ Succ(b)
 
-		agent Ne(ret, a)
-		// rule Ne(ret, a) ~ b = Not(ret) ~ cnt, Eq(cnt, a) ~ b
-		rule Ne(ret, a) ~ Zero = Not(ret) ~ cnt, Eq(cnt, a) ~ Zero
-		rule Ne(ret, a) ~ Succ(p) = Not(ret) ~ cnt, Eq(cnt, a) ~ Succ(p)
+    agent Ne(ret, a)
+    // rule Ne(ret, a) ~ b = Not(ret) ~ cnt, Eq(cnt, a) ~ b
+    rule Ne(ret, a) ~ Zero = Not(ret) ~ cnt, Eq(cnt, a) ~ Zero
+    rule Ne(ret, a) ~ Succ(p) = Not(ret) ~ cnt, Eq(cnt, a) ~ Succ(p)
 
-		agent And(ret, a)
-		rule And(ret, a) ~ T = ret ~ a
-		rule And(ret, a) ~ F = ret ~ F, a ~ Era
+    agent And(ret, a)
+    rule And(ret, a) ~ T = ret ~ a
+    rule And(ret, a) ~ F = ret ~ F, a ~ Era
 
-		agent Or(ret, a)
-		rule Or(ret, a) ~ T = ret ~ T, a ~ Era
-		rule Or(ret, a) ~ F = ret ~ a
+    agent Or(ret, a)
+    rule Or(ret, a) ~ T = ret ~ T, a ~ Era
+    rule Or(ret, a) ~ F = ret ~ a
 
-		agent Not(ret)
-		rule Not(ret) ~ T = ret ~ F
-		rule Not(ret) ~ F = ret ~ T
+    agent Not(ret)
+    rule Not(ret) ~ T = ret ~ F
+    rule Not(ret) ~ F = ret ~ T
 
-		init
-			And(And(And(root, a), b), c) ~ d,
-			Eq(a, Succ(Zero)) ~ Succ(Zero),
-			Ne(b, Succ(Zero)) ~ Succ(Succ(Zero)),
-			Ne(c, Succ(Succ(Zero))) ~ Succ(Zero),
-			Eq(d, n5) ~ a5, Add(a5, Succ(Succ(Zero))) ~ Succ(Succ(Succ(Zero))),
-				Sub(n5, n6) ~ Succ(Zero),
-				Mul(n6, Succ(Succ(Zero))) ~ Succ(Succ(Succ(Zero)))
-		",
-	)
-	.unwrap();
-  let rule_book = ast.build_rule_book()?;
+    init
+      And(And(And(root, a), b), c) ~ d,
+      Eq(a, Succ(Zero)) ~ Succ(Zero),
+      Ne(b, Succ(Zero)) ~ Succ(Succ(Zero)),
+      Ne(c, Succ(Succ(Zero))) ~ Succ(Zero),
+      Eq(d, n5) ~ a5, Add(a5, Succ(Succ(Zero))) ~ Succ(Succ(Succ(Zero))),
+        Sub(n5, n6) ~ Succ(Zero),
+        Mul(n6, Succ(Succ(Zero))) ~ Succ(Succ(Succ(Zero)))
+  ";
+  let ast = Ast::parse(src).unwrap();
+  let rule_book = ast.build_rule_book(src)?;
   let mut net = ast.to_inet(&rule_book.agent_name_to_id);
   net.validate();
   net.reduce_full(&rule_book);
@@ -546,63 +513,61 @@ fn test_unary_arith() -> Result<(), Error> {
 
 #[test]
 fn test_lambda() -> Result<(), Error> {
-  let ast = Ast::parse(
-    "
-		agent Era
-		agent Dup(a, b)
-		agent Sup(a, b)
-		agent Lam(var, body)
-		agent App(arg, ret)
+  let src = "
+    agent Era
+    agent Dup(a, b)
+    agent Sup(a, b)
+    agent Lam(var, body)
+    agent App(arg, ret)
 
-		rule Era ~ Era =
-		rule Era ~ Dup(a, b) = Era ~ a, Era ~ b
-		rule Era ~ Sup(a, b) = Era ~ a, Era ~ b
-		rule Era ~ Lam(var, body) = Era ~ var, Era ~ body
-		rule Era ~ App(arg, ret) = Era ~ arg, Era ~ ret
+    rule Era ~ Era =
+    rule Era ~ Dup(a, b) = Era ~ a, Era ~ b
+    rule Era ~ Sup(a, b) = Era ~ a, Era ~ b
+    rule Era ~ Lam(var, body) = Era ~ var, Era ~ body
+    rule Era ~ App(arg, ret) = Era ~ arg, Era ~ ret
 
-		// App-Lam
-		rule App(arg, ret) ~ Lam(var, body) = ret ~ body, arg ~ var
+    // App-Lam
+    rule App(arg, ret) ~ Lam(var, body) = ret ~ body, arg ~ var
 
-		// Dup-Lam
-		rule Dup(a, b) ~ Lam(var, body) =
-			Sup(var1, var2) ~ var,
-			Dup(body1, body2) ~ body,
-			Lam(var1, body1) ~ a,
-			Lam(var2, body2) ~ b
+    // Dup-Lam
+    rule Dup(a, b) ~ Lam(var, body) =
+      Sup(var1, var2) ~ var,
+      Dup(body1, body2) ~ body,
+      Lam(var1, body1) ~ a,
+      Lam(var2, body2) ~ b
 
-		// Dup-Sup 1
-		rule Dup(a, b) ~ Sup(c, d) = a ~ c, b ~ d
+    // Dup-Sup 1
+    rule Dup(a, b) ~ Sup(c, d) = a ~ c, b ~ d
 
-		// Dup-Sup 2, can't have both Dup-Sup rules until we have labels
-		// rule Dup(x, y) ~ Sup(a, b) =
-		// 	Sup(xa, xb) ~ x,
-		// 	Sup(ya, yb) ~ y,
-		// 	Dup(xa, ya) ~ a,
-		// 	Dup(xb, yb) ~ b
+    // Dup-Sup 2, can't have both Dup-Sup rules until we have labels
+    // rule Dup(x, y) ~ Sup(a, b) =
+    // 	Sup(xa, xb) ~ x,
+    // 	Sup(ya, yb) ~ y,
+    // 	Dup(xa, ya) ~ a,
+    // 	Dup(xb, yb) ~ b
 
-		// App-Sup
-		rule App(arg, ret) ~ Sup(a, b) =
-			Dup(arg1, arg2) ~ arg,
-			App(arg1, ret1) ~ a, App(arg2, ret2) ~ b,
-			Sup(ret1, ret2) ~ ret
+    // App-Sup
+    rule App(arg, ret) ~ Sup(a, b) =
+      Dup(arg1, arg2) ~ arg,
+      App(arg1, ret1) ~ a, App(arg2, ret2) ~ b,
+      Sup(ret1, ret2) ~ ret
 
-		init
-			two ~ Lam(f, Lam(x, body)),
-				Dup(f1, f2) ~ f,
-				App(x, c) ~ f1,
-				App(c, body) ~ f2,
+    init
+      two ~ Lam(f, Lam(x, body)),
+        Dup(f1, f2) ~ f,
+        App(x, c) ~ f1,
+        App(c, body) ~ f2,
 
-			id ~ Lam(y, y),
+      id ~ Lam(y, y),
 
-			fn ~ id, Era ~ two,
-			// fn ~ two, Era ~ id,
-			Dup(fn1, fn2) ~ fn,
-			Dup(fn1, fn2) ~ root,
-			",
-  )
-  .unwrap();
+      fn ~ id, Era ~ two,
+      // fn ~ two, Era ~ id,
+      Dup(fn1, fn2) ~ fn,
+      Dup(fn1, fn2) ~ root,
+  ";
+  let ast = Ast::parse(src).unwrap();
 
-  let rule_book = ast.build_rule_book()?;
+  let rule_book = ast.build_rule_book(src)?;
   let mut net = ast.to_inet(&rule_book.agent_name_to_id);
   net.validate();
   for step in 0 .. {
