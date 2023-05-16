@@ -3,10 +3,13 @@ name = "ivm"
 version = "0.1.0"
 edition = "2021"
 
+[profile.dev.package.backtrace]
+opt-level = 3
+
 [dependencies]
 ariadne = "0.2.0"
 chumsky = { version = "1.0.0-alpha.4", features = ["label"] }
-color-eyre = "0.6.2"
+color-eyre = { version = "0.6.2", default-features = false }
 derive-new = "0.5.9"
 hashbrown = "0.13.2"
 itertools = "0.10.5"
