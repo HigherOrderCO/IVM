@@ -138,7 +138,7 @@ impl Ast {
     fn validate_connections(
       errors: &mut IvmErrors,
       span: SimpleSpan,
-      rule_src: Option<&str>,
+      rule_connections: bool,
       connections: &[Connection],
       mut port_name_occurrences: HashMap<PortName, usize>,
       agent_arity: &HashMap<&PortName, usize>,
@@ -157,28 +157,22 @@ impl Ast {
       // Except for root port, which must be referenced exactly once, but only in `init` connections
       for (port_name, occurrences) in port_name_occurrences {
         if port_name == ROOT_PORT_NAME {
-          match rule_src {
-            None => {
-              // Rule `init`
-              if occurrences != 1 {
-                errors.push(Rich::custom(span, format!(
+          if rule_connections {
+            errors.push(Rich::custom(span, format!(
+              "Reserved port name `{ROOT_PORT_NAME}` not allowed in rule, only in `{INIT_CONNECTIONS}` connections",
+            )));
+          } else {
+            // `init` connections
+            if occurrences != 1 {
+              errors.push(Rich::custom(span, format!(
                   "Port name `{ROOT_PORT_NAME}` occurs {occurrences} != 1 times in `{INIT_CONNECTIONS}` connections",
                 )));
-              }
-            }
-            Some(rule_src) => {
-              errors.push(Rich::custom(span, format!(
-                "Reserved port name `{ROOT_PORT_NAME}` not allowed in rule `{rule_src}`, only in `{INIT_CONNECTIONS}` connections",
-              )));
             }
           }
         } else {
           if occurrences != 2 {
-            let rule_src = rule_src.unwrap_or(INIT_CONNECTIONS);
-            errors.push(Rich::custom(
-              span,
-              format!("Port name `{port_name}` occurs {occurrences} != 2 times in `{rule_src}`"),
-            ));
+            errors
+              .push(Rich::custom(span, format!("Port name `{port_name}` occurs {occurrences} != 2 times",)));
           }
         }
       }
@@ -215,16 +209,17 @@ impl Ast {
         span: SimpleSpan,
         side: &str,
         agent: &Agent,
-        rule_src: &str,
       ) -> HashSet<PortName> {
         let port_names = agent.ports.iter().cloned().collect::<HashSet<_>>();
         if port_names.len() < agent.ports.len() {
           let duplicate_port_names = agent.ports.iter().duplicates().join(", ");
           errors.push(Rich::custom(
-            span ,format!(
-            "Duplicate port names ({duplicate_port_names}) in agent `{}` in {side} of active pair in rule `{rule_src}`",
-            agent.agent,
-          )));
+            span,
+            format!(
+              "Duplicate port names ({duplicate_port_names}) in agent `{}` in {side} of active pair in rule",
+              agent.agent,
+            ),
+          ));
         }
         port_names
       }
@@ -239,8 +234,8 @@ impl Ast {
       check_agent_arity(&mut errors, span, rhs, &agent_arity);
 
       // Ensure that sets of port names in LHS and RHS of active pair are disjoint
-      let port_names_in_lhs = validate_agent_port_references(&mut errors, span, "LHS", &lhs, rule_src);
-      let port_names_in_rhs = validate_agent_port_references(&mut errors, span, "RHS", &rhs, rule_src);
+      let port_names_in_lhs = validate_agent_port_references(&mut errors, span, "LHS", &lhs);
+      let port_names_in_rhs = validate_agent_port_references(&mut errors, span, "RHS", &rhs);
 
       // Reject duplicate port names in active pair
       // E.g. A(c) ~ B(c) is invalid, port names in active pair must be distinct
@@ -249,8 +244,9 @@ impl Ast {
         errors.push(Rich::custom(
           span,
           format!(
-          "Cannot use the same port names ({intersection}) on both sides of active pair in LHS of rule `{rule_src}`",
-        )));
+            "Cannot use the same port names ({intersection}) on both sides of active pair in LHS of rule",
+          ),
+        ));
       }
 
       // Port names in active pair are external links in a rule's RHS net
@@ -261,14 +257,14 @@ impl Ast {
       let port_name_occurrences = port_names_in_active_pair.map(|port| (port, 1)).collect::<HashMap<_, _>>();
 
       // Validate RHS
-      validate_connections(&mut errors, span, Some(rule_src), rule_rhs, port_name_occurrences, &agent_arity);
+      validate_connections(&mut errors, span, true, rule_rhs, port_name_occurrences, &agent_arity);
 
       // Rule is valid
       rule_book.add_rule(rule, rule_src, &mut errors);
     }
 
     // We validated the connections of all rules' RHS, now we validate the `init` connections
-    validate_connections(&mut errors, self.init_span, None, &self.init, HashMap::new(), &agent_arity);
+    validate_connections(&mut errors, self.init_span, false, &self.init, HashMap::new(), &agent_arity);
 
     construct_result(src, Some(rule_book), errors)
   }
