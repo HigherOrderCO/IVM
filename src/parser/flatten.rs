@@ -1,8 +1,9 @@
 use crate::parser::ast::*;
 use itertools::Itertools;
 
-// A(a, B(C(b, c), D(d, e))) =>
-// A(a, _0), _0 ~ B(_1, _2), _1 ~ C(b, c), _2 ~ D(d, e)
+// The syntax allows writing nested agents for convenience, this gets flattened during parsing.
+// E.g. A(a, B(b, c)) => A(a, _0), _0 ~ B(b, c)
+// E.g. A(a, B(C(b, c), D(d, e))) => A(a, _0), _0 ~ B(_1, _2), _1 ~ C(b, c), _2 ~ D(d, e)
 
 impl NestedAgent {
   pub(super) fn flatten(self, next_port_idx: &mut usize) -> (Agent, Vec<Connection>) {
@@ -66,6 +67,9 @@ pub(super) fn flatten_connections(connections: Vec<NestedConnection>) -> Vec<Con
   connections.into_iter().flat_map(|connection| connection.flatten(&mut next_port_idx)).collect()
 }
 
+// Unflatten connections, used for reading back computed nets into readable textual form
+// E.g. root ~ Succ(_0), Succ(_1) ~ _2, _1 ~ Zero, Succ(_3) ~ _0, _3 ~ Succ(_2) => root ~ Succ(Succ(Succ(Succ(Zero))))
+// E.g. root ~ Lam(_0, _1), _0 ~ _1 => root ~ Lam(_0, _0)
 pub fn unflatten_connections(connections: Vec<Connection>) -> Vec<NestedConnection> {
   let mut connections = connections
     .into_iter()

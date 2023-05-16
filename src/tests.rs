@@ -113,7 +113,7 @@ fn test_ast_validation() {
 		"
     )
     .unwrap()
-    .build_rulebook()
+    .build_rule_book()
     .is_ok()
   );
 }
@@ -135,7 +135,7 @@ fn test_to_inet() -> Result<(), Error> {
 		",
   )
   .unwrap();
-  let rule_book = ast.build_rulebook()?;
+  let rule_book = ast.build_rule_book()?;
   let mut net = ast.to_inet(&rule_book.agent_name_to_id);
   net.validate();
   eprintln!("{:#?}", net);
@@ -161,7 +161,7 @@ fn test_reduce_inet() -> Result<(), Error> {
 		",
   )
   .unwrap();
-  let rule_book = ast.build_rulebook()?;
+  let rule_book = ast.build_rule_book()?;
   let mut net = ast.to_inet(&rule_book.agent_name_to_id);
   net.validate();
   eprintln!("{:#?}", net);
@@ -185,7 +185,7 @@ fn test_reduce_inet_basic() -> Result<(), Error> {
 		",
   )
   .unwrap();
-  let rule_book = ast.build_rulebook()?;
+  let rule_book = ast.build_rule_book()?;
   let mut net = ast.to_inet(&rule_book.agent_name_to_id);
   net.validate();
   eprintln!("{:#?}", net);
@@ -210,7 +210,7 @@ fn test_reduce_inet_ctor_era() -> Result<(), Error> {
 		",
   )
   .unwrap();
-  let rule_book = ast.build_rulebook()?;
+  let rule_book = ast.build_rule_book()?;
   let mut net = ast.to_inet(&rule_book.agent_name_to_id);
   net.validate();
   eprintln!("{:#?}", net);
@@ -233,7 +233,7 @@ fn test_reduce_inet_link_self_principal() -> Result<(), Error> {
 		",
   )
   .unwrap();
-  let rule_book = ast.build_rulebook()?;
+  let rule_book = ast.build_rule_book()?;
   let mut net = ast.to_inet(&rule_book.agent_name_to_id);
   net.validate();
   eprintln!("{:#?}", net);
@@ -253,7 +253,7 @@ fn test_reduce_inet_link_self_aux() -> Result<(), Error> {
 		",
   )
   .unwrap();
-  let rule_book = ast.build_rulebook()?;
+  let rule_book = ast.build_rule_book()?;
   let mut net = ast.to_inet(&rule_book.agent_name_to_id);
   net.validate();
   assert_eq!(net.active_pairs().len(), 1, "{}\n{:#?}", ast, net);
@@ -274,7 +274,7 @@ fn test_reduce_inet_link_self_double() -> Result<(), Error> {
 		",
   )
   .unwrap();
-  let rule_book = ast.build_rulebook()?;
+  let rule_book = ast.build_rule_book()?;
   let mut net = ast.to_inet(&rule_book.agent_name_to_id);
   net.validate();
   assert_eq!(net.active_pairs().len(), 2, "{}\n{:#?}", ast, net);
@@ -296,7 +296,7 @@ fn test_reduce_inet_link_pair_single() -> Result<(), Error> {
 		",
   )
   .unwrap();
-  let rule_book = ast.build_rulebook()?;
+  let rule_book = ast.build_rule_book()?;
   let mut net = ast.to_inet(&rule_book.agent_name_to_id);
   net.validate();
   assert_eq!(net.active_pairs().len(), 1, "{}\n{:#?}", ast, net);
@@ -317,7 +317,7 @@ fn test_reduce_inet_link_pair_double() -> Result<(), Error> {
 		",
   )
   .unwrap();
-  let rule_book = ast.build_rulebook()?;
+  let rule_book = ast.build_rule_book()?;
   let mut net = ast.to_inet(&rule_book.agent_name_to_id);
   net.validate();
   assert_eq!(net.active_pairs().len(), 2, "{}\n{:#?}", ast, net);
@@ -336,7 +336,7 @@ fn test_inet_validate_basic() -> Result<(), Error> {
 		",
   ))
   .unwrap();
-  let rule_book = ast.build_rulebook()?;
+  let rule_book = ast.build_rule_book()?;
   let net = ast.to_inet(&rule_book.agent_name_to_id);
   eprintln!("{:#?}", net);
   net.validate();
@@ -353,7 +353,7 @@ fn test_inet_validate() -> Result<(), Error> {
 		",
   )
   .unwrap();
-  let rule_book = ast.build_rulebook()?;
+  let rule_book = ast.build_rule_book()?;
   let net = ast.to_inet(&rule_book.agent_name_to_id);
   net.validate();
   Ok(())
@@ -372,7 +372,7 @@ fn test_inet_validate_transitive_connections() -> Result<(), Error> {
 		",
   ))
   .unwrap();
-  let rule_book = ast.build_rulebook()?;
+  let rule_book = ast.build_rule_book()?;
   let net = ast.to_inet(&rule_book.agent_name_to_id);
   eprintln!("{:#?}", net);
   net.validate();
@@ -399,7 +399,7 @@ fn test_inet_validate_transitive_connections_generated() -> Result<(), Error> {
 			",
     ))
     .unwrap();
-    let rule_book = ast.build_rulebook()?;
+    let rule_book = ast.build_rule_book()?;
     let net = ast.to_inet(&rule_book.agent_name_to_id);
     net.validate();
   }
@@ -418,7 +418,7 @@ fn test_duplicate_rule() {
 		",
   ))
   .unwrap();
-  assert!(ast.build_rulebook().is_err());
+  assert!(ast.build_rule_book().is_err());
 }
 
 #[test]
@@ -438,7 +438,7 @@ fn test_read_back() -> Result<(), Error> {
 		",
   )
   .unwrap();
-  let rule_book = ast.build_rulebook()?;
+  let rule_book = ast.build_rule_book()?;
   let mut net = ast.to_inet(&rule_book.agent_name_to_id);
   net.validate();
   net.reduce_full(&rule_book);
@@ -533,7 +533,7 @@ fn test_unary_arith() -> Result<(), Error> {
 		",
 	)
 	.unwrap();
-  let rule_book = ast.build_rulebook()?;
+  let rule_book = ast.build_rule_book()?;
   let mut net = ast.to_inet(&rule_book.agent_name_to_id);
   net.validate();
   net.reduce_full(&rule_book);
@@ -602,7 +602,7 @@ fn test_lambda() -> Result<(), Error> {
   )
   .unwrap();
 
-  let rule_book = ast.build_rulebook()?;
+  let rule_book = ast.build_rule_book()?;
   let mut net = ast.to_inet(&rule_book.agent_name_to_id);
   net.validate();
   for step in 0 .. {

@@ -129,7 +129,7 @@ impl Ast {
         // Root port must be referenced exactly once
         let refs_to_root_port = init_connections
           .iter()
-          .flat_map(|conn| conn.port_names())
+          .flat_map(|conn| conn.port_names_iter())
           .filter(|port| *port == ROOT_PORT_NAME)
           .count();
         if refs_to_root_port != 1 {

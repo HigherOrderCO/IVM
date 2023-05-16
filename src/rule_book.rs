@@ -7,18 +7,32 @@ use derive_new::new;
 use hashbrown::HashMap;
 use itertools::Itertools;
 
+/// Agent IDs start from 1, 0 is reserved for the root node's agent_id
 pub type AgentId = usize;
 
-pub const ROOT_AGENT_ID: AgentId = 0; // Reserved
+/// Agent ID 0 is reserved for the root
+pub const ROOT_AGENT_ID: AgentId = 0;
 
-type RuleLhs = (AgentId, AgentId); // Ordered pair of AgentIds represents active pair
+/// Ordered pair of AgentIds represents active pair
+/// So that we only have to store one mapping to cover A~B and B~A
+type RuleLhs = (AgentId, AgentId);
 
 struct RuleRhs {
-  rule: String, // Rule's source code, for showing in error messages
+  rule_src: String, // Rule's source code, used for showing in error messages
   port_idx_to_name: [Vec<PortName>; 2],
   connections: Vec<Connection>, // TODO: Use agent/port id in connections
 }
 
+/**
+The rule book is a mapping from active pair to a rule's RHS connections.
+E.g. if we have: rule Add(ret, a) ~ Succ(b) = ret ~ Succ(cnt), Add(cnt, a) ~ b
+then the rule book maps (Add, Succ) to [ret ~ Succ(cnt), Add(cnt, a) ~ b]
+which is a sub-net in which the ports that are named in the active pair
+appear as external links (i.e. not connected to any other ports in the sub-net).
+During rule application, the rule RHS sub-net is constructed and external links
+are connected to the corresponding ports in the active pair of the net.
+Currently the ports are linked by name, but this could be changed to use port ids.
+*/
 #[derive(new)]
 pub struct RuleBook {
   pub agent_name_to_id: HashMap<AgentName, AgentId>, // TODO: read-only getter
@@ -27,7 +41,7 @@ pub struct RuleBook {
 }
 
 impl RuleBook {
-  // Insert into rule book and check for duplicate rules
+  /// Insert into rule book and check for duplicate rules
   pub fn add_rule(&mut self, rule: &Rule) -> Result<(), Error> {
     let Rule { lhs: active_pair, rhs: rule_rhs } = rule;
     let ActivePair { lhs, rhs } = active_pair;
@@ -37,7 +51,7 @@ impl RuleBook {
       if lhs_id <= rhs_id { ((lhs, rhs), (lhs_id, rhs_id)) } else { ((rhs, lhs), (rhs_id, lhs_id)) };
     let key = (lhs_id, rhs_id); // Ordered pair
     let value = RuleRhs {
-      rule: rule.to_string(),
+      rule_src: rule.to_string(),
       port_idx_to_name: [
         lhs.ports.iter().map(|port_name| port_name.to_owned()).collect_vec(),
         rhs.ports.iter().map(|port_name| port_name.to_owned()).collect_vec(),
@@ -50,7 +64,8 @@ impl RuleBook {
     Ok(())
   }
 
-  // Apply rule to active pair if such a rule exists
+  /// Apply rule to active pair if such a rule exists
+  /// Returns true if a rule was applied
   pub fn apply(&self, net: &mut INet, active_pair: (NodeIdx, NodeIdx)) -> bool {
     let (node_idx_lhs, node_idx_rhs) = active_pair;
     let (lhs_node, rhs_node) = (&net[node_idx_lhs], &net[node_idx_rhs]);
@@ -61,8 +76,14 @@ impl RuleBook {
       ((rhs_node, lhs_node), (rhs_id, lhs_id))
     };
     let key = (lhs_id, rhs_id); // Ordered pair
-    if let Some(RuleRhs { rule, port_idx_to_name, connections }) = self.rules.get(&key) {
+    if let Some(RuleRhs { rule_src: rule, port_idx_to_name, connections }) = self.rules.get(&key) {
       // eprintln!("Applying rule for active pair `{active_pair:?}`: {rule}");
+
+      // Build external_links map from port name to NodePort in this net
+      // based on all auxiliary ports in the active pair, e.g. if the rule RHS
+      // is Add(ret, a) ~ Succ(b), the ports {ret, a, b} will be mapped, then
+      // INet::add_connections looks up ports when adding the connections of the RHS sub-net
+
       // TODO: Optimize, don't do port lookup by name
       let external_links = [lhs_node, rhs_node]
         .into_iter()
