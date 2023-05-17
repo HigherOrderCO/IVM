@@ -21,9 +21,9 @@ pub struct Node {
   pub agent_id: AgentId,
 
   /// 0: principal port
-  pub ports: Vec<NodePort>,
+  pub ports: Vec<NodePort>, // TODO: Use smallvec for reducing heap allocations
 
-  pub agent_name: AgentName, // TODO: Remove, map agent_id to agent_name for readback
+  pub agent_name: AgentName, // TODO: Remove. Map agent_id to agent_name for readback
 }
 
 /// A port in the INet
@@ -104,12 +104,14 @@ impl INet {
     assert!(used_node_count >= 2, "Interaction net has {used_node_count} < 2 nodes:\n{self:#?}");
   }
 
-  pub fn active_pairs(&self) -> Vec<(NodeIdx, NodeIdx)> {
+  /// Determine active pairs that can potentially be rewritten if there is a matching rule
+  pub fn active_pairs(&self) -> ActivePairs {
     let mut active_pairs = vec![];
     for (node_idx, node) in self.nodes.iter().enumerate() {
       if !node.used {
         continue;
       }
+
       let dst = self[port(node_idx, 0)];
       // After validation, we can assume that dst.node_idx == node_idx
       if node_idx < dst.node_idx && dst.port_idx == 0 {
@@ -119,7 +121,7 @@ impl INet {
     active_pairs
   }
 
-  // Rewrite active pair using rule book
+  /// Rewrite active pair using rule book
   fn rewrite(&mut self, (a, b): (NodeIdx, NodeIdx), rule_book: &RuleBook) -> bool {
     debug_assert!(
       self[port(a, 0)] == port(b, 0) && self[port(b, 0)] == port(a, 0),
@@ -141,7 +143,7 @@ impl INet {
     // both target ports of the intermediary node together and free it.
 
     const INTERMEDIARY_AGENT_ID: AgentId = usize::MAX;
-    let mut intermediary_nodes = vec![];
+    let mut intermediary_nodes = vec![]; // TODO: Reuse between rewrites
     for node_idx in [a, b] {
       for port_idx in 0 .. self[node_idx].ports.len() {
         let dst = self[node_idx][port_idx];
@@ -441,6 +443,8 @@ impl INet {
 }
 
 type MaybeLinkedPort<'a> = Result<NodePort, PortNameRef<'a>>;
+
+type ActivePairs = Vec<(NodeIdx, NodeIdx)>;
 
 // Indexing utils to allow indexing an INet with a NodeIdx and NodePort
 

@@ -91,7 +91,7 @@ impl RuleBook {
       // is Add(ret, a) ~ Succ(b), the ports {ret, a, b} will be mapped, then
       // INet::add_connections looks up ports when adding the connections of the RHS sub-net
 
-      // TODO: Optimize, don't do port lookup by name
+      // TODO: Optimize, don't do port lookup by name, and don't alloc a HashMap every time
       let external_links = [lhs_node, rhs_node]
         .into_iter()
         .zip(port_idx_to_name)

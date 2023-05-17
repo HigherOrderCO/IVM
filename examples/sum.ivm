@@ -58,7 +58,9 @@ rule Sum(ret, a, b) ~ F =
     Sum(sum, a_plus_1, b_2) ~ eq,
     Add(ret, a_4) ~ sum
 
-// Calculate the sum of all integers from 0 to 5
+// Calculate the sum of all integers from 0 to 10
 init
     n5 ~ Succ(Succ(Succ(Succ(Succ(Zero))))),
-    Sum(root, Zero, n5) ~ F
+    Dup(n5_1, n5_2) ~ n5,
+    Add(n10, n5_1) ~ n5_2,
+    Sum(root, Zero, n10) ~ F

@@ -363,7 +363,6 @@ impl ValidatedAst {
     if cfg!(debug_assertions) {
       net.validate();
     }
-
     INetProgram { net, ast, rule_book }
   }
 }

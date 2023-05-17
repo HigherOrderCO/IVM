@@ -37,9 +37,9 @@ fn test_parser() -> IvmResult<()> {
     )?,
     Ast {
       agents: vec![
-        Spanned { span: SimpleSpan::new(0, 0), val: Agent { agent: "Zero".to_string(), ports: vec![] } },
+        Spanned { span: SimpleSpan::new(12, 22), val: Agent { agent: "Zero".to_string(), ports: vec![] } },
         Spanned {
-          span: SimpleSpan::new(0, 0),
+          span: SimpleSpan::new(25, 41),
           val: Agent { agent: "Succ".to_string(), ports: vec!["pred".to_string()] }
         },
       ],
@@ -567,15 +567,18 @@ fn test_lambda() -> IvmResult<()> {
 
 #[test]
 fn test_sum() -> IvmResult<()> {
+  fn nat(n: usize) -> String {
+    if n == 0 { "Zero".to_string() } else { format!("Succ({})", nat(n - 1)) }
+  }
+
   let src = include_str!("../examples/sum.ivm");
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
   let mut program = ast.to_inet_program();
   program.reduce();
   let result = program.read_back();
-  assert_eq!(
-    result,
-    "root ~ Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Zero)))))))))))))))"
-  );
+
+  let n55 = nat(55);
+  assert_eq!(result, format!("root ~ {n55}"));
   Ok(())
 }
