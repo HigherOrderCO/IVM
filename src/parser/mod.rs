@@ -73,11 +73,13 @@ impl Ast {
 
     // Agent and rule definitions can be interleaved, but are separated before storing in Ast
     enum Definition {
-      Agent(Agent),
+      Agent(Spanned<Agent>),
       Rule(Rule),
     }
 
-    let agent_def = just(Token::KeywordAgent).ignore_then(agent).map(Definition::Agent);
+    let agent_def = just(Token::KeywordAgent)
+      .ignore_then(agent)
+      .map_with_span(|agent, span| Definition::Agent(Spanned::new(span, agent)));
 
     let connector = nested_agent.map(NestedConnector::Agent).or(port_name.map(NestedConnector::Port));
 

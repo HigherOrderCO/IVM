@@ -101,10 +101,17 @@ pub struct Rule {
   pub span: SimpleSpan, // Used for showing in error messages
 }
 
+/// Wrapper for a value with a span
+#[derive(new, Debug, Clone, PartialEq)]
+pub struct Spanned<T> {
+  pub span: SimpleSpan,
+  pub val: T,
+}
+
 /// AST of source file
 #[derive(Debug, Clone, PartialEq)]
 pub struct Ast {
-  pub agents: Vec<Agent>,
+  pub agents: Vec<Spanned<Agent>>,
   pub rules: Vec<Rule>,
   pub init: Vec<Connection>,
   pub init_span: SimpleSpan, // Used for showing in error messages
@@ -114,17 +121,23 @@ impl Ast {
   /// Validate AST and build rule book from it
   /// The `src` parameter is used for resolving spans for error messages
   pub fn build_rule_book(&self, src: &str) -> IvmResult<RuleBook> {
-    /// Check that agent usage has correct number of ports matching its declaration
-    /// Increase usage count for agent so that we can warn about unused agents
+    /// Validate agent usage, returns false if agent is undeclared
     fn validate_agent_usage(
       errors: &mut ProgramErrors,
       span: SimpleSpan,
       Agent { agent, ports }: &Agent,
       agent_arity: &HashMap<&AgentName, usize>,
       agent_usages: &mut HashMap<&AgentName, usize>,
-    ) {
-      *agent_usages.get_mut(agent).unwrap() += 1;
+    ) -> bool {
+      // Increase usage count for agent so that we can warn about unused agents
+      if let Some(usage_count) = agent_usages.get_mut(agent) {
+        *usage_count += 1;
+      } else {
+        errors.push(Rich::custom(span, format!("Agent `{}` is used, but not declared", agent)));
+        return false;
+      }
 
+      // Check that agent usage has correct number of ports matching its declaration
       let port_count = agent_arity[agent];
       if ports.len() != port_count {
         errors.push(Rich::custom(
@@ -132,6 +145,7 @@ impl Ast {
           format!("Agent `{}` has {} ports, but {} ports are linked to it", agent, port_count, ports.len()),
         ));
       }
+      true
     }
 
     /// Validate connections, either in a rule's RHS or in the initial net:
@@ -150,7 +164,9 @@ impl Ast {
       // Check agent arity and count port occurrences
       process_agents_and_ports(
         connections,
-        |agent| validate_agent_usage(errors, span, agent, agent_arity, agent_usages),
+        |agent| {
+          validate_agent_usage(errors, span, agent, agent_arity, agent_usages);
+        },
         |port_name: &PortName| {
           let occurrences = port_name_occurrences.entry(port_name.to_owned()).or_insert(0);
           *occurrences += 1;
@@ -186,10 +202,9 @@ impl Ast {
 
     // Build agent arity map and check for duplicate agent definitions
     let mut agent_arity = HashMap::new();
-    for Agent { agent, ports } in &self.agents {
+    for Spanned { span, val: Agent { agent, ports } } in &self.agents {
       if agent_arity.insert(agent, ports.len()).is_some() {
-        // TODO: Add span field to Agent and push Rich error with agent span
-        errors.push(Rich::custom(self.init_span, format!("Duplicate definition of agent `{}`", agent)));
+        errors.push(Rich::custom(*span, format!("Duplicate definition of agent `{}`", agent)));
       }
     }
 
@@ -240,8 +255,15 @@ impl Ast {
 
       // Validate LHS
       let ActivePair { lhs, rhs } = active_pair;
-      validate_agent_usage(&mut errors, span, lhs, &agent_arity, &mut agent_usages_in_rule_active_pairs);
-      validate_agent_usage(&mut errors, span, rhs, &agent_arity, &mut agent_usages_in_rule_active_pairs);
+      let active_pair_agents_exist =
+        validate_agent_usage(&mut errors, span, lhs, &agent_arity, &mut agent_usages_in_rule_active_pairs)
+          && validate_agent_usage(
+            &mut errors,
+            span,
+            rhs,
+            &agent_arity,
+            &mut agent_usages_in_rule_active_pairs,
+          );
 
       // Ensure that sets of port names in LHS and RHS of active pair are disjoint
       let port_names_in_lhs = validate_agent_port_references(&mut errors, span, "LHS", &lhs);
@@ -277,8 +299,10 @@ impl Ast {
         &mut agent_usages,
       );
 
-      // Rule is valid
-      rule_book.add_rule(rule, rule_src, &mut errors);
+      // Add rule to rule book
+      if active_pair_agents_exist {
+        rule_book.add_rule(rule, rule_src, &mut errors);
+      }
     }
 
     // We validated the connections of all rules' RHS, now we validate the `init` connections
@@ -293,10 +317,14 @@ impl Ast {
     );
 
     // Check for unused agents
-    for (agent, usage_count) in agent_usages {
+    for (agent_name, usage_count) in agent_usages {
       if usage_count == 0 {
-        // TODO: Add span field to Agent and push Rich error with agent span
-        errors.push(Rich::custom(self.init_span, format!("Unused agent `{}`", agent)));
+        let span = self
+          .agents
+          .iter()
+          .find_map(|Spanned { span, val: Agent { agent, ports: _ } }| (agent == agent_name).then_some(*span))
+          .unwrap();
+        errors.push(Rich::custom(span, format!("Unused agent `{agent_name}`")));
       }
     }
 

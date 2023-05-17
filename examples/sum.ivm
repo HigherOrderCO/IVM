@@ -47,23 +47,6 @@ agent Eq(ret, a)
 rule Eq(ret, a) ~ Zero = IsZero(ret) ~ d, AbsDiff(d, a) ~ Zero
 rule Eq(ret, a) ~ Succ(b) = IsZero(ret) ~ d, AbsDiff(d, a) ~ Succ(b)
 
-agent Ne(ret, a)
-// rule Ne(ret, a) ~ b = Not(ret) ~ cnt, Eq(cnt, a) ~ b
-rule Ne(ret, a) ~ Zero = Not(ret) ~ cnt, Eq(cnt, a) ~ Zero
-rule Ne(ret, a) ~ Succ(p) = Not(ret) ~ cnt, Eq(cnt, a) ~ Succ(p)
-
-agent And(ret, a)
-rule And(ret, a) ~ T = ret ~ a
-rule And(ret, a) ~ F = ret ~ F, a ~ Era
-
-agent Or(ret, a)
-rule Or(ret, a) ~ T = ret ~ T, a ~ Era
-rule Or(ret, a) ~ F = ret ~ a
-
-agent Not(ret)
-rule Not(ret) ~ T = ret ~ F
-rule Not(ret) ~ F = ret ~ T
-
 agent Sum(ret, a, b)
 rule Sum(ret, a, b) ~ T = ret ~ Zero, a ~ Era, b ~ Era
 rule Sum(ret, a, b) ~ F =

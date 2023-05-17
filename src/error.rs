@@ -1,6 +1,7 @@
 use crate::lexer::Token;
 use chumsky::prelude::Rich;
 use color_eyre::{eyre::eyre, Report};
+use itertools::Itertools;
 
 pub type ProgramError<'a> = Rich<'a, Token<'a>>;
 pub type ProgramErrors<'a> = Vec<ProgramError<'a>>;
@@ -10,7 +11,7 @@ pub type IvmResult<T> = color_eyre::eyre::Result<T>;
 pub fn print_program_errors<'a>(errs: ProgramErrors<'a>, src: &'a str) -> Report {
   use ariadne::{Color, Label, Report, ReportKind, Source};
 
-  errs.into_iter().for_each(|e| {
+  errs.into_iter().sorted_by_key(|e| e.span().start).for_each(|e| {
     Report::build(ReportKind::Error, (), e.span().start)
     // .with_code(1)
     .with_message(e.to_string())

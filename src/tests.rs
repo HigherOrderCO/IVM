@@ -41,10 +41,13 @@ fn test_parser() {
     )
     .unwrap(),
     Ast {
-      agents: vec![Agent { agent: "Zero".to_string(), ports: vec![] }, Agent {
-        agent: "Succ".to_string(),
-        ports: vec!["pred".to_string()]
-      }],
+      agents: vec![
+        Spanned { span: SimpleSpan::new(0, 0), val: Agent { agent: "Zero".to_string(), ports: vec![] } },
+        Spanned {
+          span: SimpleSpan::new(0, 0),
+          val: Agent { agent: "Succ".to_string(), ports: vec!["pred".to_string()] }
+        },
+      ],
       rules: vec![
         Rule {
           lhs: ActivePair {
@@ -484,9 +487,9 @@ fn test_unary_arith() -> IvmResult<()> {
     rule And(ret, a) ~ T = ret ~ a
     rule And(ret, a) ~ F = ret ~ F, a ~ Era
 
-    agent Or(ret, a)
-    rule Or(ret, a) ~ T = ret ~ T, a ~ Era
-    rule Or(ret, a) ~ F = ret ~ a
+    // agent Or(ret, a)
+    // rule Or(ret, a) ~ T = ret ~ T, a ~ Era
+    // rule Or(ret, a) ~ F = ret ~ a
 
     agent Not(ret)
     rule Not(ret) ~ T = ret ~ F
