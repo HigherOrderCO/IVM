@@ -1,6 +1,7 @@
 use crate::{
   error::{pass_output_and_errors_to_result, IvmResult, ProgramErrors},
   inet::{port, INet, NodeIdx, NodePort},
+  inet_program::INetProgram,
   rule_book::{AgentId, RuleBook, ROOT_AGENT_ID},
 };
 use chumsky::{prelude::Rich, span::SimpleSpan};
@@ -119,7 +120,7 @@ pub struct Ast {
 impl Ast {
   /// Validate AST and build rule book from it
   /// The `src` parameter is used for resolving spans for error messages
-  pub fn build_rule_book(&self, src: &str) -> IvmResult<RuleBook> {
+  pub fn validate(self, src: &str) -> IvmResult<ValidatedAst> {
     /// Validate agent usage, returns false if agent is undeclared
     fn validate_agent_usage(
       errors: &mut ProgramErrors,
@@ -327,12 +328,24 @@ impl Ast {
       }
     }
 
-    pass_output_and_errors_to_result(src, Some(rule_book), errors)
-  }
+    // Drop these so that self can be moved
+    drop(agent_arity);
+    drop(agent_usages_in_rule_active_pairs);
 
-  // AST needs to be validated
-  // `agent_name_to_id` must come from the `RuleBook` returned by `build_rule_book`
-  pub fn to_inet(&self, agent_name_to_id: &HashMap<AgentName, AgentId>) -> INet {
+    pass_output_and_errors_to_result(src, Some(ValidatedAst { ast: self, rule_book }), errors)
+  }
+}
+
+pub struct ValidatedAst {
+  pub ast: Ast,
+  pub rule_book: RuleBook,
+}
+
+impl ValidatedAst {
+  /// Generate an `INetProgram` from a `ValidatedAst`
+  pub fn to_inet_program(self) -> INetProgram {
+    let Self { ast, rule_book } = self;
+
     let mut net = INet::default();
 
     // Create root node with one port
@@ -345,8 +358,13 @@ impl Ast {
     let mut external_links = HashMap::<PortNameRef, NodePort>::new();
     external_links.insert(ROOT_PORT_NAME, root_port);
 
-    net.add_connections(&self.init.val, external_links, agent_name_to_id);
-    net
+    net.add_connections(&ast.init.val, external_links, &rule_book.agent_name_to_id);
+
+    if cfg!(debug_assertions) {
+      net.validate();
+    }
+
+    INetProgram { net, ast, rule_book }
   }
 }
 

@@ -11,15 +11,23 @@ use std::fmt;
 pub type NodeIdx = usize;
 pub type PortIdx = usize;
 
+/// A node in the INet
 #[derive(Debug, Clone, Default)]
 pub struct Node {
+  /// Unused nodes are available for reuse
   used: bool,
-  pub agent_id: AgentId,     // Note: Has value ROOT_AGENT_ID by default
-  pub ports: Vec<NodePort>,  // 0: principal port
+
+  /// Note: Has value ROOT_AGENT_ID by default
+  pub agent_id: AgentId,
+
+  /// 0: principal port
+  pub ports: Vec<NodePort>,
+
   pub agent_name: AgentName, // TODO: Remove, map agent_id to agent_name for readback
 }
 
-// Note: (0, 0) is default
+/// A port in the INet
+/// Note: (0, 0) is default
 #[derive(Default, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NodePort {
   pub node_idx: NodeIdx,
@@ -43,6 +51,7 @@ pub struct INet {
 }
 
 impl INet {
+  /// Allocate a new node
   pub fn new_node(&mut self, agent_id: AgentId, port_count: usize) -> NodeIdx {
     let node_idx = match self.free_nodes.pop() {
       Some(node_idx) => node_idx,
@@ -59,18 +68,20 @@ impl INet {
     node_idx
   }
 
+  /// Make node available for reuse
   pub fn free_node(&mut self, node_idx: NodeIdx) {
     self[node_idx] = Default::default();
     self.free_nodes.push(node_idx);
   }
 
-  // Mutually link port
+  /// Mutually link port
   pub fn link(&mut self, a: NodePort, b: NodePort) {
     self[a] = b;
     self[b] = a;
   }
 
-  // TODO: Consume self, return validated type / error instead of assert
+  /// Validate inet, panics if invalid, useful for debugging/tests
+  /// If an INet generated from a valid AST fails validation, it's a bug
   pub fn validate(&self) {
     let mut used_node_count = 0;
     for (node_idx, node) in self.nodes.iter().enumerate() {
@@ -166,7 +177,7 @@ impl INet {
     rewritten
   }
 
-  // Perform one reduction step
+  /// Perform one reduction step
   pub fn reduce_step(&mut self, rule_book: &RuleBook) -> bool {
     for active_pair in self.active_pairs() {
       if self.rewrite(active_pair, rule_book) {
@@ -176,6 +187,8 @@ impl INet {
     false
   }
 
+  /// Reduce net until no more reductions are possible
+  // TODO: Only scan all active pairs in the beginning, check neighbors adjacent to rewritten sub-net for new active pairs
   pub fn reduce_full(&mut self, rule_book: &RuleBook) {
     while {
       let mut made_progress = false;
@@ -188,6 +201,7 @@ impl INet {
     } {}
   }
 
+  /// Read back reduced net into textual form
   pub fn read_back(&self) -> Vec<Connection> {
     let mut connections = vec![];
 
@@ -427,6 +441,8 @@ impl INet {
 }
 
 type MaybeLinkedPort<'a> = Result<NodePort, PortNameRef<'a>>;
+
+// Indexing utils to allow indexing an INet with a NodeIdx and NodePort
 
 use std::ops::{Index, IndexMut};
 
