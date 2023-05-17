@@ -95,7 +95,7 @@ impl fmt::Display for Ast {
       "AST {{\n{indent}agents: [\n{}\n{indent}],\n{indent}rules: [\n{}\n{indent}],\n{indent}init: {}\n}}",
       self.agents.iter().map(|agent| format!("{indent}{indent}{}", agent.val)).join("\n"),
       self.rules.iter().map(|rule| format!("{indent}{indent}{}", rule)).join("\n"),
-      fmt_connections(&self.init)
+      fmt_connections(&self.init.val)
     )
   }
 }

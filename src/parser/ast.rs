@@ -104,7 +104,7 @@ pub struct Rule {
 /// Wrapper for a value with a span
 #[derive(new, Debug, Clone, PartialEq)]
 pub struct Spanned<T> {
-  pub span: SimpleSpan,
+  pub span: SimpleSpan, // Used for showing in error messages
   pub val: T,
 }
 
@@ -113,8 +113,7 @@ pub struct Spanned<T> {
 pub struct Ast {
   pub agents: Vec<Spanned<Agent>>,
   pub rules: Vec<Rule>,
-  pub init: Vec<Connection>,
-  pub init_span: SimpleSpan, // Used for showing in error messages
+  pub init: Spanned<Vec<Connection>>,
 }
 
 impl Ast {
@@ -308,9 +307,9 @@ impl Ast {
     // We validated the connections of all rules' RHS, now we validate the `init` connections
     validate_connections(
       &mut errors,
-      self.init_span,
+      self.init.span,
       false,
-      &self.init,
+      &self.init.val,
       HashMap::new(),
       &agent_arity,
       &mut agent_usages,
@@ -346,7 +345,7 @@ impl Ast {
     let mut external_links = HashMap::<PortNameRef, NodePort>::new();
     external_links.insert(ROOT_PORT_NAME, root_port);
 
-    net.add_connections(&self.init, external_links, agent_name_to_id);
+    net.add_connections(&self.init.val, external_links, agent_name_to_id);
     net
   }
 }

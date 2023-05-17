@@ -150,7 +150,7 @@ impl Ast {
           ));
         }
 
-        Ast { agents, rules, init: init_connections, init_span }
+        Ast { agents, rules, init: Spanned { span: init_span, val: init_connections } }
       });
 
     ast

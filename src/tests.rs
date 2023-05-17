@@ -84,21 +84,23 @@ fn test_parser() {
           span: SimpleSpan::new(87, 133),
         }
       ],
-      init: vec![
-        Connection {
-          lhs: Connector::Port(ROOT_PORT_NAME.to_string()),
-          rhs: Connector::Agent(Agent { agent: "Succ".to_string(), ports: vec!["_0".to_string()] })
-        },
-        Connection {
-          lhs: Connector::Port("_0".to_string()),
-          rhs: Connector::Agent(Agent { agent: "Succ".to_string(), ports: vec!["_1".to_string()] })
-        },
-        Connection {
-          lhs: Connector::Port("_1".to_string()),
-          rhs: Connector::Agent(Agent { agent: "Zero".to_string(), ports: vec![] })
-        }
-      ],
-      init_span: SimpleSpan::new(137, 165),
+      init: Spanned {
+        span: SimpleSpan::new(137, 165),
+        val: vec![
+          Connection {
+            lhs: Connector::Port(ROOT_PORT_NAME.to_string()),
+            rhs: Connector::Agent(Agent { agent: "Succ".to_string(), ports: vec!["_0".to_string()] })
+          },
+          Connection {
+            lhs: Connector::Port("_0".to_string()),
+            rhs: Connector::Agent(Agent { agent: "Succ".to_string(), ports: vec!["_1".to_string()] })
+          },
+          Connection {
+            lhs: Connector::Port("_1".to_string()),
+            rhs: Connector::Agent(Agent { agent: "Zero".to_string(), ports: vec![] })
+          }
+        ],
+      },
     }
   );
 }
