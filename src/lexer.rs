@@ -41,7 +41,7 @@ pub enum Token<'a> {
   #[token("/*", comment)]
   MultiLineComment,
 
-  #[regex(r"[ \t\f\n]+", logos::skip)]
+  #[regex(r"[ \t\f\r\n]+", logos::skip)]
   Whitespace,
 
   #[error]

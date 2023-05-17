@@ -1,0 +1,81 @@
+agent Zero
+agent Succ(pred)
+rule Succ(ret) ~ Zero = ret ~ Succ(Zero)
+rule Succ(ret) ~ Succ(p) = ret ~ Succ(Succ(p))
+
+agent Add(a, b)
+rule Add(ret, a) ~ Zero = ret ~ a
+rule Add(ret, a) ~ Succ(b) = ret ~ Succ(cnt), Add(cnt, a) ~ b
+
+agent Era
+rule Era ~ Zero =
+rule Era ~ Succ(p) = Era ~ p
+
+agent Dup(a, b)
+rule Dup(a, b) ~ Zero = a ~ Zero, b ~ Zero
+rule Dup(a, b) ~ Succ(p) = a ~ Succ(a2), b ~ Succ(b2), Dup(a2, b2) ~ p
+
+agent Mul(a, b)
+rule Mul(ret, a) ~ Zero = ret ~ Zero, a ~ Era
+rule Mul(ret, a) ~ Succ(b) = Dup(a2, a3) ~ a, Add(ret, cnt) ~ a2, Mul(cnt, a3) ~ b
+
+agent T
+agent F
+
+rule Era ~ T =
+rule Era ~ F =
+
+agent IsZero(ret)
+rule IsZero(ret) ~ Zero = ret ~ T
+rule IsZero(ret) ~ Succ(a) = ret ~ F, a ~ Era
+
+agent Pred(ret)
+rule Pred(ret) ~ Zero = ret ~ Zero
+rule Pred(ret) ~ Succ(p) = ret ~ p
+
+agent Sub(ret, a)
+rule Sub(ret, a) ~ Zero = ret ~ a
+rule Sub(ret, a) ~ Succ(b) = Pred(pa) ~ a, Sub(ret, pa) ~ b,
+
+agent AbsDiff(ret, a)
+// rule AbsDiff(ret, a) ~ b = Add(ret, x) ~ y, Sub(x, a) ~ b, Sub(y, b) ~ a
+rule AbsDiff(ret, a) ~ Zero = Add(ret, x) ~ y, Sub(x, a2) ~ Zero, Sub(y, Zero) ~ a3, Dup(a2, a3) ~ a
+rule AbsDiff(ret, a) ~ Succ(b) = Add(ret, x) ~ y, Sub(x, a2) ~ Succ(b2), Sub(y, Succ(b3)) ~ a3, Dup(a2, a3) ~ a, Dup(b2, b3) ~ b
+
+agent Eq(ret, a)
+// rule Eq(ret, a) ~ b = IsZero(ret) ~ d, AbsDiff(d, a) ~ b
+rule Eq(ret, a) ~ Zero = IsZero(ret) ~ d, AbsDiff(d, a) ~ Zero
+rule Eq(ret, a) ~ Succ(b) = IsZero(ret) ~ d, AbsDiff(d, a) ~ Succ(b)
+
+agent Ne(ret, a)
+// rule Ne(ret, a) ~ b = Not(ret) ~ cnt, Eq(cnt, a) ~ b
+rule Ne(ret, a) ~ Zero = Not(ret) ~ cnt, Eq(cnt, a) ~ Zero
+rule Ne(ret, a) ~ Succ(p) = Not(ret) ~ cnt, Eq(cnt, a) ~ Succ(p)
+
+agent And(ret, a)
+rule And(ret, a) ~ T = ret ~ a
+rule And(ret, a) ~ F = ret ~ F, a ~ Era
+
+agent Or(ret, a)
+rule Or(ret, a) ~ T = ret ~ T, a ~ Era
+rule Or(ret, a) ~ F = ret ~ a
+
+agent Not(ret)
+rule Not(ret) ~ T = ret ~ F
+rule Not(ret) ~ F = ret ~ T
+
+agent Sum(ret, a, b)
+rule Sum(ret, a, b) ~ T = ret ~ Zero, a ~ Era, b ~ Era
+rule Sum(ret, a, b) ~ F =
+    Dup(a_1, a_2) ~ a,
+    Dup(a_3, a_4) ~ a_2,
+    Dup(b_1, b_2) ~ b,
+    Eq(eq, a_1) ~ b_1,
+    Add(a_plus_1, a_3) ~ Succ(Zero),
+    Sum(sum, a_plus_1, b_2) ~ eq,
+    Add(ret, a_4) ~ sum
+
+// Calculate the sum of all integers from 0 to 5
+init
+    n5 ~ Succ(Succ(Succ(Succ(Succ(Zero))))),
+    Sum(root, Zero, n5) ~ F

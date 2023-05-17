@@ -2,11 +2,12 @@ use crate::lexer::Token;
 use chumsky::prelude::Rich;
 use color_eyre::{eyre::eyre, Report};
 
-pub type IvmError<'a> = Rich<'a, Token<'a>>;
-pub type IvmErrors<'a> = Vec<IvmError<'a>>;
+pub type ProgramError<'a> = Rich<'a, Token<'a>>;
+pub type ProgramErrors<'a> = Vec<ProgramError<'a>>;
 pub type IvmResult<T> = color_eyre::eyre::Result<T>;
 
-pub fn convert_errors<'a>(errs: IvmErrors<'a>, src: &'a str) -> Report {
+/// Print program errors and convert to eyre error, to be used in map_err
+pub fn print_program_errors<'a>(errs: ProgramErrors<'a>, src: &'a str) -> Report {
   use ariadne::{Color, Label, Report, ReportKind, Source};
 
   errs.into_iter().for_each(|e| {
@@ -23,12 +24,19 @@ pub fn convert_errors<'a>(errs: IvmErrors<'a>, src: &'a str) -> Report {
   eyre!("Execution aborted due to errors")
 }
 
-pub fn construct_result<'a, T>(src: &'a str, output: Option<T>, errors: IvmErrors<'a>) -> IvmResult<T> {
-  type TmpResult<'a, T> = Result<T, Vec<IvmError<'a>>>;
+/// Each static analysis / transformation pass can produce an output, or multiple errors
+/// found in the program. This function takes the output and program errors, and returns a Result
+/// for easy chaining of passes. If the program contains errors, they are printed to stderr.
+pub fn pass_output_and_errors_to_result<'a, T>(
+  src: &'a str,
+  output: Option<T>,
+  errors: ProgramErrors<'a>,
+) -> IvmResult<T> {
+  type OutputResult<'a, T> = Result<T, Vec<ProgramError<'a>>>;
 
-  fn construct_result<'a, T>(output: Option<T>, errors: IvmErrors<'a>) -> TmpResult<'a, T> {
+  fn output_result<'a, T>(output: Option<T>, errors: ProgramErrors<'a>) -> OutputResult<'a, T> {
     if errors.is_empty() { output.ok_or(errors) } else { Err(errors) }
   }
 
-  construct_result(output, errors).map_err(|e| convert_errors(e, src))
+  output_result(output, errors).map_err(|e| print_program_errors(e, src))
 }

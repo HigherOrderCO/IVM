@@ -3,6 +3,10 @@ use ivm::parser::{ast::Ast, display::fmt_nested_connections, flatten::unflatten_
 use std::{env, fs};
 
 fn main() -> Result<()> {
+  if env::var("RUST_LIB_BACKTRACE").is_err() {
+    // Don't print backtrace for user program errors
+    env::set_var("RUST_LIB_BACKTRACE", "0");
+  }
   color_eyre::install()?;
 
   let args: Vec<String> = env::args().collect();

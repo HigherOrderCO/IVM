@@ -387,10 +387,11 @@ impl INet {
       port.or_else(|port_name| lookup_port_name(port_name, prev, link_graph))
     }
 
+    // Link remaining ports that were not linked yet
     for [lhs, rhs] in &ports_to_link_later {
       match (lhs, rhs) {
-        (&Ok(lhs), &Ok(rhs)) => self.link(lhs, rhs),
-        (Err(_), Err(_)) => {} // Skip
+        (&Ok(_), &Ok(_)) => unreachable!("Both ports were already linked"),
+        (Err(_), Err(_)) => {} // Skip, we only process ends of links (Ok(port) values)
         (&Ok(node_port), &Err(port_name)) | (&Err(port_name), &Ok(node_port)) => {
           let port_to_find: MaybeLinkedPort = Err(port_name);
           let mut connections = ports_to_link_later

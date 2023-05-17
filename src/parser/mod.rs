@@ -24,7 +24,7 @@ pub mod display;
 pub mod flatten;
 
 use crate::{
-  error::{convert_errors, IvmResult},
+  error::{print_program_errors, IvmResult},
   lexer::Token,
   parser::{ast::*, display::fmt_connections, flatten::flatten_connections},
 };
@@ -157,6 +157,6 @@ impl Ast {
   pub fn parse(src: &str) -> IvmResult<Self> {
     let token_iter = Token::lexer(src).spanned().map(|(tok, span)| (tok, span.into()));
     let token_stream = Stream::from_iter(token_iter).spanned((src.len() .. src.len()).into());
-    Self::parser().parse(token_stream).into_result().map_err(|e| convert_errors(e, src))
+    Self::parser().parse(token_stream).into_result().map_err(|e| print_program_errors(e, src))
   }
 }

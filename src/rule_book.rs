@@ -1,5 +1,5 @@
 use crate::{
-  error::IvmErrors,
+  error::ProgramErrors,
   inet::{INet, NodeIdx},
   parser::ast::{ActivePair, AgentName, Connection, PortName, Rule},
 };
@@ -43,7 +43,7 @@ pub struct RuleBook {
 
 impl RuleBook {
   /// Insert into rule book and check for duplicate rules
-  pub fn add_rule(&mut self, rule: &Rule, rule_src: &str, errors: &mut IvmErrors) {
+  pub fn add_rule(&mut self, rule: &Rule, rule_src: &str, errors: &mut ProgramErrors) {
     let Rule { lhs: active_pair, rhs: rule_rhs, span } = rule;
 
     // Construct RuleLhs, ordered pair of agent IDs
