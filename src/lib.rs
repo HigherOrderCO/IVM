@@ -8,3 +8,4 @@ pub mod parser;
 pub mod rule_book;
 #[cfg(test)]
 mod tests;
+pub mod util;

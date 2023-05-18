@@ -1,7 +1,8 @@
 use crate::{
   error::ProgramErrors,
-  inet::{INet, NodeIdx},
+  inet::{CreatedNodes, INet, NodeIdx},
   parser::ast::{ActivePair, AgentName, Connection, PortName, Rule},
+  util::sort_tuples_by_fst,
 };
 use chumsky::prelude::Rich;
 use derive_new::new;
@@ -47,19 +48,19 @@ impl RuleBook {
     let Rule { lhs: active_pair, rhs: rule_rhs, span } = rule;
 
     // Construct RuleLhs, ordered pair of agent IDs
-    let ActivePair { lhs, rhs } = active_pair;
-    let lhs_id = self.agent_name_to_id[&lhs.agent];
-    let rhs_id = self.agent_name_to_id[&rhs.agent];
+    let ActivePair { lhs: lhs_agent, rhs: rhs_agent } = active_pair;
+    let lhs_id = self.agent_name_to_id[&lhs_agent.agent];
+    let rhs_id = self.agent_name_to_id[&rhs_agent.agent];
     // Also order agents along with agent_id
-    let ((lhs, rhs), (lhs_id, rhs_id)) =
-      if lhs_id <= rhs_id { ((lhs, rhs), (lhs_id, rhs_id)) } else { ((rhs, lhs), (rhs_id, lhs_id)) };
+    let ((lhs_id, lhs_agent), (rhs_id, rhs_agent)) =
+      sort_tuples_by_fst(((lhs_id, lhs_agent), (rhs_id, rhs_agent)));
     let key = (lhs_id, rhs_id); // Ordered pair
 
     let value = RuleRhs {
       rule_src: rule_src.to_owned(),
       port_idx_to_name: [
-        lhs.ports.iter().map(|port_name| port_name.to_owned()).collect_vec(),
-        rhs.ports.iter().map(|port_name| port_name.to_owned()).collect_vec(),
+        lhs_agent.ports.iter().map(|port_name| port_name.to_owned()).collect_vec(),
+        rhs_agent.ports.iter().map(|port_name| port_name.to_owned()).collect_vec(),
       ],
       connections: rule_rhs.clone(),
     };
@@ -69,18 +70,15 @@ impl RuleBook {
   }
 
   /// Apply rule to active pair if such a rule exists
-  /// Returns true if a rule was applied
-  pub fn apply(&self, net: &mut INet, active_pair: (NodeIdx, NodeIdx)) -> bool {
+  /// Returns indices of created nodes if a rule was applied, None otherwise
+  pub fn apply(&self, net: &mut INet, active_pair: (NodeIdx, NodeIdx)) -> Option<CreatedNodes> {
     // Construct RuleLhs, ordered pair of agent IDs
     let (node_idx_lhs, node_idx_rhs) = active_pair;
     let (lhs_node, rhs_node) = (&net[node_idx_lhs], &net[node_idx_rhs]);
     let (lhs_id, rhs_id) = (lhs_node.agent_id, rhs_node.agent_id);
     // Also order nodes along with agent_id
-    let ((lhs_node, rhs_node), (lhs_id, rhs_id)) = if lhs_id <= rhs_id {
-      ((lhs_node, rhs_node), (lhs_id, rhs_id))
-    } else {
-      ((rhs_node, lhs_node), (rhs_id, lhs_id))
-    };
+    let ((lhs_id, lhs_node), (rhs_id, rhs_node)) =
+      sort_tuples_by_fst(((lhs_id, lhs_node), (rhs_id, rhs_node)));
     let key = (lhs_id, rhs_id); // Ordered pair
 
     if let Some(RuleRhs { rule_src, port_idx_to_name, connections }) = self.rules.get(&key) {
@@ -91,7 +89,7 @@ impl RuleBook {
       // is Add(ret, a) ~ Succ(b), the ports {ret, a, b} will be mapped, then
       // INet::add_connections looks up ports when adding the connections of the RHS sub-net
 
-      // TODO: Optimize, don't do port lookup by name, and don't alloc a HashMap every time
+      // TODO: Optimize, don't do port lookup by name, and don't allocate a HashMap every time
       let external_links = [lhs_node, rhs_node]
         .into_iter()
         .zip(port_idx_to_name)
@@ -111,10 +109,9 @@ impl RuleBook {
             .map(|(&node_port, port_name)| (port_name.as_str(), node_port))
         })
         .collect();
-      net.add_connections(connections, external_links, &self.agent_name_to_id);
-      true
+      Some(net.add_connections(connections, external_links, &self.agent_name_to_id))
     } else {
-      false
+      None
     }
   }
 }

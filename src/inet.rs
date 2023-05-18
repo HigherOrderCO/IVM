@@ -3,10 +3,11 @@ use crate::{
     Agent, AgentName, Connection, Connector, PortName, PortNameRef, ROOT_NODE_IDX, ROOT_PORT_NAME,
   },
   rule_book::{AgentId, RuleBook},
+  util::sort_tuple,
 };
 use hashbrown::{hash_map::Entry, HashMap};
 use itertools::Itertools;
-use std::fmt;
+use std::{fmt, vec};
 
 pub type NodeIdx = usize;
 pub type PortIdx = usize;
@@ -104,6 +105,12 @@ impl INet {
     assert!(used_node_count >= 2, "Interaction net has {used_node_count} < 2 nodes:\n{self:#?}");
   }
 
+  fn node_is_part_of_active_pair(&self, node_idx: NodeIdx) -> Option<NodeIdx> {
+    let dst = self[port(node_idx, 0)];
+    // After validation, we can assume that dst.node_idx == node_idx
+    (dst.port_idx == 0).then_some(dst.node_idx)
+  }
+
   /// Determine active pairs that can potentially be rewritten if there is a matching rule
   pub fn active_pairs(&self) -> ActivePairs {
     let mut active_pairs = vec![];
@@ -112,22 +119,50 @@ impl INet {
         continue;
       }
 
-      let dst = self[port(node_idx, 0)];
-      // After validation, we can assume that dst.node_idx == node_idx
-      if node_idx < dst.node_idx && dst.port_idx == 0 {
-        active_pairs.push((node_idx, dst.node_idx));
+      if let Some(dst_node_idx) = self.node_is_part_of_active_pair(node_idx) {
+        if node_idx < dst_node_idx {
+          active_pairs.push((node_idx, dst_node_idx));
+        }
       }
     }
     active_pairs
   }
 
   /// Rewrite active pair using rule book
-  fn rewrite(&mut self, (a, b): (NodeIdx, NodeIdx), rule_book: &RuleBook) -> bool {
+  /// Returns new active pairs that were created during the rewrite
+  /// Returns None if active pair could not be rewritten because there was no matching rule
+  fn rewrite(&mut self, (a, b): (NodeIdx, NodeIdx), rule_book: &RuleBook) -> Option<ActivePairs> {
     debug_assert!(
       self[port(a, 0)] == port(b, 0) && self[port(b, 0)] == port(a, 0),
       "Expected active pair: {:?}\n{self:#?}",
       (a, b),
     );
+
+    // New active pairs can appear within the inserted sub-net or at the links between the sub-net and
+    // the rest of the net. Of the pre-existing nodes, only the nodes whose principal port was linked
+    // to an aux port of the active pair before the rewrite can become active pairs after the rewrite.
+
+    // We need to determine which local nodes could form active pairs after this rewrite
+    // The rewrite could connect aux ports of both A and B which could form an active pair
+    // So initially we add those nodes as candidates whose principal port is connected to
+    // an aux port of A or B. (Note that it's impossible that we accidentally add A or B
+    // as candidates, because their principal ports are already connected to each other's.)
+    // (Also note that we don't have to dedup A's and B's candidates, because each node
+    // can only be a candidate once because it only has one principal port.)
+    // After the rewrite, we add nodes as candidates that were created during the rewrite
+    let active_pair_candidate_nodes = self[a]
+      .ports
+      .iter()
+      .skip(1)
+      .chain(self[b].ports.iter().skip(1))
+      .filter(|port| port.port_idx == 0)
+      .map(|port| port.node_idx)
+      .collect::<Vec<_>>();
+    // let active_pair_candidate_nodes = dbg!(active_pair_candidate_nodes);
+    // for &node_idx in &active_pair_candidate_nodes {
+    //   debug_assert!(self[node_idx].used, "Node {} is not used: {:?}", node_idx, self[node_idx]);
+    // }
+    // let (tmp_a, tmp_b) = (self[a].clone(), self[b].clone());
 
     // If active pair contains two references to the same wire, we have to link
     // the target of both references afterwards, so that the nodes can be freed
@@ -160,7 +195,7 @@ impl INet {
       }
     }
 
-    let rewritten = rule_book.apply(self, (a, b));
+    let rule_application_result = rule_book.apply(self, (a, b));
     for node_idx in intermediary_nodes {
       let node = &self[node_idx];
       let src = node[0];
@@ -168,21 +203,55 @@ impl INet {
       self.link(src, dst);
       self.free_node(node_idx);
     }
-    if rewritten {
+    let new_active_pairs = if let Some(created_nodes) = rule_application_result {
       self.free_node(a);
       self.free_node(b);
-    }
+
+      // Add nodes created by rewrite as candidates for active pairs
+      // There are no duplicates in this chained iter, because these sets are disjoint
+      // let created_nodes = dbg!(created_nodes);
+      let active_pair_candidate_nodes = active_pair_candidate_nodes.into_iter().chain(created_nodes);
+
+      // Check which of the candidates actually form active pairs.
+      // Sort each pair of node indices so that we can dedup them.
+      // Sort the list of pairs so that we can dedup them.
+      // TODO: Optimize, don't allocate memory
+      let new_active_pairs = active_pair_candidate_nodes
+        .filter_map(|node_idx| {
+          debug_assert!(
+            self[node_idx].used,
+            "(a, b): ({a}, {b})\nNode {node_idx} is not used: {:#?}",
+            self[node_idx]
+          );
+          self.node_is_part_of_active_pair(node_idx).map(|dst_node_idx| {
+            debug_assert!(self[dst_node_idx].used);
+            // sort_tuple(dbg!((node_idx, dst_node_idx)))
+            sort_tuple((node_idx, dst_node_idx))
+          })
+        })
+        .sorted()
+        .dedup()
+        /* .dedup_by(|p1, p2| {
+          let r = p1 == p2;
+          debug_assert!(!r, "{:?} == {:?}", p1, p2);
+          r
+        }) */
+        .collect_vec();
+      Some(new_active_pairs)
+    } else {
+      None // No rewrite happened, so no new active pairs came into existence
+    };
 
     if cfg!(debug_assertions) {
       self.validate();
     }
-    rewritten
+    new_active_pairs
   }
 
   /// Perform one reduction step
   pub fn reduce_step(&mut self, rule_book: &RuleBook) -> bool {
     for active_pair in self.active_pairs() {
-      if self.rewrite(active_pair, rule_book) {
+      if self.rewrite(active_pair, rule_book).is_some() {
         return true;
       }
     }
@@ -190,13 +259,14 @@ impl INet {
   }
 
   /// Reduce net until no more reductions are possible
-  // TODO: Only scan all active pairs in the beginning, check neighbors adjacent to rewritten sub-net for new active pairs
-  pub fn reduce_full(&mut self, rule_book: &RuleBook) -> usize {
+  /// This function rescans for active pairs after each rewrite, making it slow
+  /// `reduce_full` is faster because it only scans for active pairs once in the beginning
+  pub fn reduce_full_slow(&mut self, rule_book: &RuleBook) -> usize {
     let mut reduction_count = 0;
     while {
       let mut made_progress = false;
       for active_pair in self.active_pairs() {
-        if self.rewrite(active_pair, rule_book) {
+        if self.rewrite(active_pair, rule_book).is_some() {
           made_progress = true;
           reduction_count += 1;
         }
@@ -206,21 +276,26 @@ impl INet {
     reduction_count
   }
 
-  /*/// Reduce net until no more reductions are possible, without rescanning for active pairs after each rewrite
-  pub fn reduce_full_opt(&mut self, rule_book: &RuleBook) {
+  /// Reduce net until no more reductions are possible, without rescanning for active pairs after each rewrite
+  /// Only scans the net for active pairs in the beginning. After each rewrite, new active pairs are found by
+  /// checking the nodes involved in and adjacent to the rewritten sub-net.
+  pub fn reduce_full(&mut self, rule_book: &RuleBook) -> usize {
     let mut active_pairs = self.active_pairs();
     let mut new_active_pairs = vec![];
+    let mut reduction_count = 0;
     while !active_pairs.is_empty() {
+      // At this point, `new_active_pairs` is empty and `active_pairs` contains all currently active pairs
       for active_pair in active_pairs.drain(..) {
-        if self.rewrite(active_pair, rule_book) {
-          // Add newly created active pairs to the list.
-          // New active pairs can appear within the inserted sub-net
-          // or at the links between the sub-net and the rest of the net
+        if let Some(new_active_pairs_created_by_rewrite) = self.rewrite(active_pair, rule_book) {
+          new_active_pairs.extend(new_active_pairs_created_by_rewrite);
+          reduction_count += 1;
         }
       }
-      active_pairs.extend(new_active_pairs.drain(..));
+      // At this point, `active_pairs` is empty and `new_active_pairs` contains all new active pairs
+      active_pairs.extend(new_active_pairs.drain(..)); // Reusing Vecs between iterations
     }
-  }*/
+    reduction_count
+  }
 
   /// Read back reduced net into textual form
   pub fn read_back(&self) -> Vec<Connection> {
@@ -283,6 +358,7 @@ impl INet {
     connector: &'a Connector,
     ports_to_link: &mut HashMap<PortNameRef<'a>, NodePort>,
     agent_name_to_id: &HashMap<AgentName, AgentId>,
+    created_nodes: &mut CreatedNodes,
   ) -> MaybeLinkedPort<'a> {
     match connector {
       Connector::Agent(agent) => {
@@ -309,6 +385,9 @@ impl INet {
           }
         }
 
+        // Keep track of created nodes so that we can determine active pairs created by this rewrite
+        created_nodes.push(node_idx);
+
         // An agent node has no deps so it can always be created.
         // Return principal port of the created agent node in this net
         Ok(port(node_idx, 0))
@@ -325,7 +404,7 @@ impl INet {
     connections: &'a [Connection],
     mut ports_to_link: HashMap<PortNameRef<'a>, NodePort>,
     agent_name_to_id: &HashMap<AgentName, AgentId>,
-  ) {
+  ) -> CreatedNodes {
     // Unordered pairs of ports that could not be linked yet, at least one of them is not linked yet
     // Unliked ports are represented by Err(name), linked ports by Ok(port)
     // (This won't contain fully linked pairs, so at least one of each is Err.)
@@ -339,10 +418,12 @@ impl INet {
     // in `ports_to_link`, remove it and link (0, 0) to C.ports[1].
     let mut ports_to_link_later = Vec::<[MaybeLinkedPort; 2]>::new();
 
+    let mut created_nodes = vec![];
+
     // Try to link all connectors of all connections
     for Connection { lhs, rhs } in connections {
-      let lhs = self.add_connector(&lhs, &mut ports_to_link, agent_name_to_id);
-      let rhs = self.add_connector(&rhs, &mut ports_to_link, agent_name_to_id);
+      let lhs = self.add_connector(&lhs, &mut ports_to_link, agent_name_to_id, &mut created_nodes);
+      let rhs = self.add_connector(&rhs, &mut ports_to_link, agent_name_to_id, &mut created_nodes);
       match (lhs, rhs) {
         (Ok(lhs), Ok(rhs)) => {
           // Both connectors could be linked to existing (or created) ports
@@ -458,8 +539,11 @@ impl INet {
         }
       }
     }
+    created_nodes
   }
 }
+
+pub type CreatedNodes = Vec<NodeIdx>;
 
 type MaybeLinkedPort<'a> = Result<NodePort, PortNameRef<'a>>;
 
