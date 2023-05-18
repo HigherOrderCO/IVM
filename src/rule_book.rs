@@ -106,7 +106,7 @@ impl RuleBook {
             .iter()
             .skip(1)
             .zip(port_idx_to_name)
-            .map(|(&node_port, port_name)| (port_name.as_str(), node_port))
+            .map(|(&node_port, port_name)| [Err(port_name.as_str()), Ok(node_port)])
         })
         .collect();
       Some(net.add_connections(connections, external_links, &self.agent_name_to_id))

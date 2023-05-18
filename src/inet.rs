@@ -327,7 +327,7 @@ impl INet {
   fn add_connector<'a, 'b: 'a>(
     &mut self,
     connector: &'b Connector,
-    ports_to_link: &'a mut Vec<[MaybeLinkedPort<'b>; 2]>,
+    deferred_port_links: &'a mut MaybeLinkedPorts<'b>,
     agent_name_to_id: &HashMap<AgentName, AgentId>,
     created_nodes: &mut CreatedNodes,
   ) -> MaybeLinkedPort<'b> {
@@ -344,7 +344,7 @@ impl INet {
           let port = port(node_idx, 1 + i); // +1 to skip principal port
 
           // Queue up connection to link it later
-          ports_to_link.push([Ok(port), Err(port_name)]);
+          deferred_port_links.push([Err(port_name), Ok(port)]);
         }
 
         // Keep track of created nodes so that we can determine active pairs created by this rewrite
@@ -359,16 +359,16 @@ impl INet {
   }
 
   /// Add connections to the net, either when creating a net from scratch or inserting a sub-net during a rewrite
-  /// `ports_to_link` is a map from port names to ports in the parent net
-  /// When creating a net from scratch, `ports_to_link` only contains the root port
+  /// `external_ports` is a map from port names to ports in the parent net
+  /// When creating a net from scratch, `external_ports` only contains the root port
   pub fn add_connections<'a>(
     &mut self,
     connections: &'a [Connection],
-    ports_to_link: HashMap<PortNameRef<'a>, NodePort>,
+    external_ports: MaybeLinkedPorts<'a>,
     agent_name_to_id: &HashMap<AgentName, AgentId>,
   ) -> CreatedNodes {
     fn port_target<'a, 'b: 'a>(
-      deferred_port_links: &'a mut Vec<[MaybeLinkedPort<'b>; 2]>,
+      deferred_port_links: &'a mut MaybeLinkedPorts<'b>,
       port_name: PortNameRef<'b>,
     ) -> MaybeLinkedPort<'b> {
       let mut target: MaybeLinkedPort = Err(port_name);
@@ -403,9 +403,8 @@ impl INet {
     // and link A.ports[1] to A.ports[2].
     // During the call of `add_connector` for C, when processing C.ports[1], it will find ("root", (0, 0))
     // in `ports_to_link`, remove it and link (0, 0) to C.ports[1].
-    // We pre-populate `deferred_port_links` with external ports:
-    let mut deferred_port_links =
-      ports_to_link.into_iter().map(|(port_name, node_port)| [Ok(node_port), Err(port_name)]).collect_vec();
+    // We pre-populate `deferred_port_links` with `external_ports`:
+    let mut deferred_port_links = external_ports;
 
     let mut created_nodes = vec![];
 
@@ -427,7 +426,7 @@ impl INet {
         (Ok(node_port), Err(port_name)) | (Err(port_name), Ok(node_port)) => {
           // Look up the connection target of `port_name` and queue the connection for later linking
           let target = port_target(&mut deferred_port_links, port_name);
-          deferred_port_links.push([Ok(node_port), target]);
+          deferred_port_links.push([target, Ok(node_port)]);
         }
         (Err(lhs), Err(rhs)) => {
           // Look up the connection target of both connectors, and queue the connection for later linking
@@ -447,6 +446,7 @@ pub type CreatedNodes = Vec<NodeIdx>;
 /// Represents a connection between two ports for deferred linking
 /// Either Ok(port) or Err(port_name) which needs to be looked up later
 type MaybeLinkedPort<'a> = Result<NodePort, PortNameRef<'a>>;
+type MaybeLinkedPorts<'a> = Vec<[MaybeLinkedPort<'a>; 2]>;
 
 type ActivePairs = Vec<(NodeIdx, NodeIdx)>;
 

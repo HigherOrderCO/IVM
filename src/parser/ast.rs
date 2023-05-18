@@ -355,8 +355,7 @@ impl ValidatedAst {
     let root_port = port(root_node_idx, 0);
 
     // The root node is the only external link ("free variable") in the `init` connections
-    let mut external_links = HashMap::<PortNameRef, NodePort>::new();
-    external_links.insert(ROOT_PORT_NAME, root_port);
+    let external_links = vec![[Err(ROOT_PORT_NAME), Ok(root_port)]];
 
     net.add_connections(&ast.init.val, external_links, &rule_book.agent_name_to_id);
 
