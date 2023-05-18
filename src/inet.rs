@@ -324,13 +324,13 @@ impl INet {
   /// Returns Ok(port) if it was added (agent) or linked (via lookup in `ports_to_link`)
   /// Modifies `ports_to_link` such that looked up (found & linked) ports are removed and
   /// auxiliary ports of newly added agents are inserted, so that future lookups can find them.
-  fn add_connector<'a>(
+  fn add_connector<'a, 'b: 'a>(
     &mut self,
-    connector: &'a Connector,
-    ports_to_link: &mut HashMap<PortNameRef<'a>, NodePort>,
+    connector: &'b Connector,
+    ports_to_link: &'a mut Vec<[MaybeLinkedPort<'b>; 2]>,
     agent_name_to_id: &HashMap<AgentName, AgentId>,
     created_nodes: &mut CreatedNodes,
-  ) -> MaybeLinkedPort<'a> {
+  ) -> MaybeLinkedPort<'b> {
     match connector {
       Connector::Agent(agent) => {
         // Insert agent node
@@ -340,20 +340,11 @@ impl INet {
         let node_idx = self.new_node(agent_id, 1 + ports.len());
         self[node_idx].agent_name = agent_name;
 
-        // Link ports
         for (i, port_name) in ports.iter().enumerate() {
           let port = port(node_idx, 1 + i); // +1 to skip principal port
-          match ports_to_link.entry(port_name) {
-            Entry::Occupied(entry) => {
-              // Link the port to the external port
-              self.link(port, entry.remove());
-            }
-            Entry::Vacant(entry) => {
-              // Other end of the link is not external but somewhere in `connections`
-              // so it can only be linked later
-              entry.insert(port);
-            }
-          }
+
+          // Queue up connection to link it later
+          ports_to_link.push([Ok(port), Err(port_name)]);
         }
 
         // Keep track of created nodes so that we can determine active pairs created by this rewrite
@@ -373,7 +364,7 @@ impl INet {
   pub fn add_connections<'a>(
     &mut self,
     connections: &'a [Connection],
-    mut ports_to_link: HashMap<PortNameRef<'a>, NodePort>,
+    ports_to_link: HashMap<PortNameRef<'a>, NodePort>,
     agent_name_to_id: &HashMap<AgentName, AgentId>,
   ) -> CreatedNodes {
     fn port_target<'a, 'b: 'a>(
@@ -412,24 +403,22 @@ impl INet {
     // and link A.ports[1] to A.ports[2].
     // During the call of `add_connector` for C, when processing C.ports[1], it will find ("root", (0, 0))
     // in `ports_to_link`, remove it and link (0, 0) to C.ports[1].
-    let mut ports_to_link_later = Vec::<[MaybeLinkedPort; 2]>::new();
+    // We pre-populate `ports_to_link_later` with external ports:
+    let mut ports_to_link_later =
+      ports_to_link.into_iter().map(|(port_name, node_port)| [Ok(node_port), Err(port_name)]).collect_vec();
 
     let mut created_nodes = vec![];
 
     // Add all connectors of all connections to `ports_to_link_later`
     for Connection { lhs, rhs } in connections {
-      let lhs = self.add_connector(&lhs, &mut ports_to_link, agent_name_to_id, &mut created_nodes);
-      let rhs = self.add_connector(&rhs, &mut ports_to_link, agent_name_to_id, &mut created_nodes);
+      let lhs = self.add_connector(&lhs, &mut ports_to_link_later, agent_name_to_id, &mut created_nodes);
+      let rhs = self.add_connector(&rhs, &mut ports_to_link_later, agent_name_to_id, &mut created_nodes);
       ports_to_link_later.push([lhs, rhs]);
     }
-    // Also remember to link all external ports that were not linked yet
-    ports_to_link_later
-      .extend(ports_to_link.into_iter().map(|(port_name, node_port)| [Err(port_name), Ok(node_port)]));
     // At this point, `ports_to_link_later` contains all pairs of ports that still need to be linked
 
     // Link all pairs of ports that could not be linked yet
     while let Some([lhs, rhs]) = ports_to_link_later.pop() {
-      // eprintln!("Linking {:?} and {:?}, ports_to_link_later: {:?}\n", lhs, rhs, ports_to_link_later);
       match (lhs, rhs) {
         (Ok(lhs), Ok(rhs)) => {
           // Both connectors are ready to be linked
