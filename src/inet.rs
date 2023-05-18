@@ -158,11 +158,6 @@ impl INet {
       .filter(|port| port.port_idx == 0)
       .map(|port| port.node_idx)
       .collect::<Vec<_>>();
-    // let active_pair_candidate_nodes = dbg!(active_pair_candidate_nodes);
-    // for &node_idx in &active_pair_candidate_nodes {
-    //   debug_assert!(self[node_idx].used, "Node {} is not used: {:?}", node_idx, self[node_idx]);
-    // }
-    // let (tmp_a, tmp_b) = (self[a].clone(), self[b].clone());
 
     // If active pair contains two references to the same wire, we have to link
     // the target of both references afterwards, so that the nodes can be freed
@@ -218,24 +213,18 @@ impl INet {
       // TODO: Optimize, don't allocate memory
       let new_active_pairs = active_pair_candidate_nodes
         .filter_map(|node_idx| {
-          debug_assert!(
-            self[node_idx].used,
-            "(a, b): ({a}, {b})\nNode {node_idx} is not used: {:#?}",
-            self[node_idx]
-          );
+          debug_assert!(self[node_idx].used, "Node {node_idx} is not used: {:#?}", self[node_idx]);
           self.node_is_part_of_active_pair(node_idx).map(|dst_node_idx| {
-            debug_assert!(self[dst_node_idx].used);
-            // sort_tuple(dbg!((node_idx, dst_node_idx)))
+            debug_assert!(
+              self[dst_node_idx].used,
+              "Node {dst_node_idx} is not used: {:#?}",
+              self[dst_node_idx]
+            );
             sort_tuple((node_idx, dst_node_idx))
           })
         })
         .sorted()
         .dedup()
-        /* .dedup_by(|p1, p2| {
-          let r = p1 == p2;
-          debug_assert!(!r, "{:?} == {:?}", p1, p2);
-          r
-        }) */
         .collect_vec();
       Some(new_active_pairs)
     } else {
@@ -258,25 +247,7 @@ impl INet {
     false
   }
 
-  /// Reduce net until no more reductions are possible
-  /// This function rescans for active pairs after each rewrite, making it slow
-  /// `reduce_full` is faster because it only scans for active pairs once in the beginning
-  pub fn reduce_full_slow(&mut self, rule_book: &RuleBook) -> usize {
-    let mut reduction_count = 0;
-    while {
-      let mut made_progress = false;
-      for active_pair in self.active_pairs() {
-        if self.rewrite(active_pair, rule_book).is_some() {
-          made_progress = true;
-          reduction_count += 1;
-        }
-      }
-      made_progress
-    } {}
-    reduction_count
-  }
-
-  /// Reduce net until no more reductions are possible, without rescanning for active pairs after each rewrite
+  /// Reduce net until no more reductions are possible, without rescanning for active pairs after each rewrite.
   /// Only scans the net for active pairs in the beginning. After each rewrite, new active pairs are found by
   /// checking the nodes involved in and adjacent to the rewritten sub-net.
   pub fn reduce_full(&mut self, rule_book: &RuleBook) -> usize {
@@ -405,9 +376,34 @@ impl INet {
     mut ports_to_link: HashMap<PortNameRef<'a>, NodePort>,
     agent_name_to_id: &HashMap<AgentName, AgentId>,
   ) -> CreatedNodes {
-    // Unordered pairs of ports that could not be linked yet, at least one of them is not linked yet
-    // Unliked ports are represented by Err(name), linked ports by Ok(port)
-    // (This won't contain fully linked pairs, so at least one of each is Err.)
+    fn port_target<'a, 'b: 'a>(
+      ports_to_link_later: &'a mut Vec<[MaybeLinkedPort<'b>; 2]>,
+      port_name: PortNameRef<'b>,
+    ) -> MaybeLinkedPort<'b> {
+      let mut target: MaybeLinkedPort = Err(port_name);
+      while let Some((i, connector)) = ports_to_link_later.iter().enumerate().find_map(|(i, [lhs, rhs])| {
+        if lhs == &target {
+          Some((i, *rhs))
+        } else if rhs == &target {
+          Some((i, *lhs))
+        } else {
+          None
+        }
+      }) {
+        // Found connection target of `port_name`, remove the connection
+        let _ = ports_to_link_later.swap_remove(i);
+
+        target = connector;
+        if target.is_ok() {
+          break;
+          // If the connector is a port name, follow the connection further
+        }
+      }
+      target
+    }
+
+    // We keep track of connections that are not linked together yet, as unordered pairs of ports.
+    // Unlinked ports are represented by Err(name), linked ports by Ok(port)
     // E.g. when this function is called with [ A(a, a) ~ b, b ~ C(root) ],
     // `ports_to_link_later` will contain [(Ok(A.ports[0]), Err("b")), (Err("b"), Ok(C.ports[0]))]
     // What happens with A.ports[1] and A.ports[2]:
@@ -420,125 +416,39 @@ impl INet {
 
     let mut created_nodes = vec![];
 
-    // Try to link all connectors of all connections
+    // Add all connectors of all connections to `ports_to_link_later`
     for Connection { lhs, rhs } in connections {
       let lhs = self.add_connector(&lhs, &mut ports_to_link, agent_name_to_id, &mut created_nodes);
       let rhs = self.add_connector(&rhs, &mut ports_to_link, agent_name_to_id, &mut created_nodes);
+      ports_to_link_later.push([lhs, rhs]);
+    }
+    // Also remember to link all external ports that were not linked yet
+    ports_to_link_later
+      .extend(ports_to_link.into_iter().map(|(port_name, node_port)| [Err(port_name), Ok(node_port)]));
+    // At this point, `ports_to_link_later` contains all pairs of ports that still need to be linked
+
+    // Link all pairs of ports that could not be linked yet
+    while let Some([lhs, rhs]) = ports_to_link_later.pop() {
+      // eprintln!("Linking {:?} and {:?}, ports_to_link_later: {:?}\n", lhs, rhs, ports_to_link_later);
       match (lhs, rhs) {
         (Ok(lhs), Ok(rhs)) => {
-          // Both connectors could be linked to existing (or created) ports
+          // Both connectors are ready to be linked
           self.link(lhs, rhs);
         }
-        _ => {
-          // At least one of the connectors is not linked yet, so remember to link this pair later
+        (Ok(node_port), Err(port_name)) | (Err(port_name), Ok(node_port)) => {
+          // Look up the connection target of `port_name` and queue the connection for later linking
+          let target = port_target(&mut ports_to_link_later, port_name);
+          ports_to_link_later.push([Ok(node_port), target]);
+        }
+        (Err(lhs), Err(rhs)) => {
+          // Look up the connection target of both connectors, and queue the connection for later linking
+          let lhs = port_target(&mut ports_to_link_later, lhs);
+          let rhs = port_target(&mut ports_to_link_later, rhs);
           ports_to_link_later.push([lhs, rhs]);
         }
       }
     }
 
-    // Also remember to link all external ports that were not linked yet
-    ports_to_link_later
-      .extend(ports_to_link.into_iter().map(|(port_name, node_port)| [Err(port_name), Ok(node_port)]));
-    // At this point, `ports_to_link_later` contains all pairs of ports that still need to be linked, these are linked below
-
-    type LinkGraph<'a> = HashMap<&'a MaybeLinkedPort<'a>, Vec<&'a MaybeLinkedPort<'a>>>; // Value Vec has len 2
-    let link_graph = ports_to_link_later
-      .iter()
-      .map(|[a, b]| (a, b))
-      .chain(ports_to_link_later.iter().map(|[a, b]| (b, a)))
-      .sorted()
-      .group_by(|(key, _values)| *key)
-      .into_iter()
-      .map(|(key, group)| (key, group.map(|(_key, value)| value).collect_vec()))
-      .collect::<LinkGraph>();
-
-    /// Find target of `port`. If it's Ok(port), return port.
-    /// If it's Err(name), do transitive lookup of name in `ports_to_link_later` and return the port.
-    fn target(
-      port: MaybeLinkedPort,
-      prev: MaybeLinkedPort,
-      link_graph: &LinkGraph,
-    ) -> Result<NodePort, String> {
-      fn lookup_port_name(
-        port_name: PortNameRef,
-        prev: MaybeLinkedPort,
-        link_graph: &LinkGraph,
-      ) -> Result<NodePort, String> {
-        /// Follows links in `link_graph` until it finds a port with the given name.
-        /// `prev` is the port we came from, so we don't follow links back to it.
-        /// This functions is used to find the other end of a connection.
-        /// E.g. when `link_graph` is [Ok(port) ~ Err(a), Err(a) ~ X, X ~ ...] and we call
-        /// `follow_links_until_port("a", Ok(port), link_graph)`, it will lookup the target of "a":
-        /// It won't follow the link Ok(port) ~ Err(a) but Err(a) ~ X
-        /// to find the other end of the connection that "a" transitsively connects to.
-        /// Then we can link `port` with the other end we found.
-        fn follow_links_until_port<'a>(
-          port_name: PortNameRef<'a>,
-          mut prev: MaybeLinkedPort<'a>,
-          link_graph: &'a LinkGraph,
-        ) -> Result<NodePort, PortNameRef<'a>> {
-          let mut port_to_find = Err(port_name);
-          while let Some(connector) = link_graph.get(&port_to_find).and_then(|connectors| {
-            connectors.iter().find(|connector| {
-              // There are two matches, one connection where we
-              // came from, and the other one is the one we want to visit
-              ***connector != prev
-            })
-          }) {
-            match connector {
-              Ok(node_port) => return Ok(*node_port),
-              _ => {
-                prev = port_to_find;
-                port_to_find = **connector;
-              }
-            }
-          }
-          port_to_find
-        }
-
-        follow_links_until_port(port_name, prev, &link_graph)
-          .map_err(|_| format!("Port not found: `{}`", port_name))
-      }
-
-      port.or_else(|port_name| lookup_port_name(port_name, prev, link_graph))
-    }
-
-    // Link remaining ports that were not linked yet
-    for [lhs, rhs] in &ports_to_link_later {
-      match (lhs, rhs) {
-        (&Ok(_), &Ok(_)) => unreachable!("Both ports were already linked"),
-        (Err(_), Err(_)) => {} // Skip, we only process ends of links (Ok(port) values)
-        (&Ok(node_port), &Err(port_name)) | (&Err(port_name), &Ok(node_port)) => {
-          let port_to_find: MaybeLinkedPort = Err(port_name);
-          let mut connections = ports_to_link_later
-            .iter()
-            .filter_map(|[lhs, rhs]| {
-              if lhs == &port_to_find {
-                Some(rhs)
-              } else if rhs == &port_to_find {
-                Some(lhs)
-              } else {
-                None
-              }
-            })
-            .copied()
-            .collect_vec();
-          let port = if connections.len() == 2 {
-            // If we have Ok(port) ~ Err(a), Err(a) ~ X, `connections` is [Ok(port), X] or [X, Ok(port)]
-            // We want to link Ok(port) ~ target(X), so we must follow X
-            connections.remove((connections[0] == Ok(node_port)) as usize)
-          } else {
-            // Every link occurs as two connections, so we can't have a single connection
-            unreachable!("{:?}", (lhs, rhs))
-          };
-          let prev = port_to_find; // Don't go to Err(a) after X
-          let target = target(port, prev, &link_graph).unwrap_or_else(|_| {
-            panic!("\nTarget not found for port: `{port_name}`\nlink_graph: {link_graph:#?}");
-          });
-          self.link(node_port, target);
-        }
-      }
-    }
     created_nodes
   }
 }
