@@ -565,12 +565,12 @@ fn test_lambda() -> IvmResult<()> {
   Ok(())
 }
 
+fn nat(n: usize) -> String {
+  if n == 0 { "Zero".to_string() } else { format!("Succ({})", nat(n - 1)) }
+}
+
 #[test]
 fn test_sum() -> IvmResult<()> {
-  fn nat(n: usize) -> String {
-    if n == 0 { "Zero".to_string() } else { format!("Succ({})", nat(n - 1)) }
-  }
-
   let src = include_str!("../examples/sum.ivm");
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
@@ -578,7 +578,6 @@ fn test_sum() -> IvmResult<()> {
   program.reduce();
   let result = program.read_back();
 
-  let n55 = nat(55);
-  assert_eq!(result, format!("root ~ {n55}"));
+  assert_eq!(result, "root ~ T");
   Ok(())
 }

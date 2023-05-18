@@ -18,8 +18,17 @@ fn main() -> Result<()> {
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
   let mut program = ast.to_inet_program();
-  program.reduce();
-  let result = program.read_back();
-  println!("{result}");
+
+  /* println!("{}", program.read_back());
+  let mut reduction_count = 0;
+  let mut prev_states = HashSet::new();
+  while program.reduce_step() {
+    let result = program.read_back();
+    println!("[{reduction_count}] {result}");
+    reduction_count += 1;
+  } */
+
+  let reduction_count = program.reduce();
+  println!("[{reduction_count}] {}", program.read_back());
   Ok(())
 }

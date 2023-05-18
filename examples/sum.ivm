@@ -39,12 +39,12 @@ rule Sub(ret, a) ~ Succ(b) = Pred(pa) ~ a, Sub(ret, pa) ~ b,
 
 agent AbsDiff(ret, a)
 // rule AbsDiff(ret, a) ~ b = Add(ret, x) ~ y, Sub(x, a) ~ b, Sub(y, b) ~ a
-rule AbsDiff(ret, a) ~ Zero = Add(ret, x) ~ y, Sub(x, a2) ~ Zero, Sub(y, Zero) ~ a3, Dup(a2, a3) ~ a
+rule AbsDiff(ret, a) ~ Zero = ret ~ a
 rule AbsDiff(ret, a) ~ Succ(b) = Add(ret, x) ~ y, Sub(x, a2) ~ Succ(b2), Sub(y, Succ(b3)) ~ a3, Dup(a2, a3) ~ a, Dup(b2, b3) ~ b
 
 agent Eq(ret, a)
 // rule Eq(ret, a) ~ b = IsZero(ret) ~ d, AbsDiff(d, a) ~ b
-rule Eq(ret, a) ~ Zero = IsZero(ret) ~ d, AbsDiff(d, a) ~ Zero
+rule Eq(ret, a) ~ Zero = IsZero(ret) ~ a
 rule Eq(ret, a) ~ Succ(b) = IsZero(ret) ~ d, AbsDiff(d, a) ~ Succ(b)
 
 agent Sum(ret, a, b)
@@ -62,5 +62,17 @@ rule Sum(ret, a, b) ~ F =
 init
     n5 ~ Succ(Succ(Succ(Succ(Succ(Zero))))),
     Dup(n5_1, n5_2) ~ n5,
-    Add(n10, n5_1) ~ n5_2,
-    Sum(root, Zero, n10) ~ F
+    Dup(n5_3, n5_4) ~ n5_2,
+    Add(n10, n5_1) ~ n5_3,
+    Sum(res, Zero, n10) ~ F,
+
+    // 55 = (5+5)*5+5
+    Dup(n5_5, n5_6) ~ n5_4,
+    Dup(n5_7, n5_8) ~ n5_5,
+    Dup(n5_9, n5_10) ~ n5_6,
+    Add(n10_2, n5_7) ~ n5_8,
+    Mul(n50, n10_2) ~ n5_9,
+    Add(n55, n50) ~ n5_10,
+
+    // Compare the result with 55
+    Eq(root, res) ~ n55

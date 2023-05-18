@@ -191,17 +191,36 @@ impl INet {
 
   /// Reduce net until no more reductions are possible
   // TODO: Only scan all active pairs in the beginning, check neighbors adjacent to rewritten sub-net for new active pairs
-  pub fn reduce_full(&mut self, rule_book: &RuleBook) {
+  pub fn reduce_full(&mut self, rule_book: &RuleBook) -> usize {
+    let mut reduction_count = 0;
     while {
       let mut made_progress = false;
       for active_pair in self.active_pairs() {
         if self.rewrite(active_pair, rule_book) {
           made_progress = true;
+          reduction_count += 1;
         }
       }
       made_progress
     } {}
+    reduction_count
   }
+
+  /*/// Reduce net until no more reductions are possible, without rescanning for active pairs after each rewrite
+  pub fn reduce_full_opt(&mut self, rule_book: &RuleBook) {
+    let mut active_pairs = self.active_pairs();
+    let mut new_active_pairs = vec![];
+    while !active_pairs.is_empty() {
+      for active_pair in active_pairs.drain(..) {
+        if self.rewrite(active_pair, rule_book) {
+          // Add newly created active pairs to the list.
+          // New active pairs can appear within the inserted sub-net
+          // or at the links between the sub-net and the rest of the net
+        }
+      }
+      active_pairs.extend(new_active_pairs.drain(..));
+    }
+  }*/
 
   /// Read back reduced net into textual form
   pub fn read_back(&self) -> Vec<Connection> {
