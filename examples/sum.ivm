@@ -47,6 +47,8 @@ agent Eq(ret, a)
 rule Eq(ret, a) ~ Zero = IsZero(ret) ~ a
 rule Eq(ret, a) ~ Succ(b) = IsZero(ret) ~ d, AbsDiff(d, a) ~ Succ(b)
 
+// Sequential sum computation, similar to:
+// https://github.com/HigherOrderCO/HVM/blob/master/guide/README.md#a-sequential-function
 agent Sum(ret, a, b)
 rule Sum(ret, a, b) ~ T = ret ~ Zero, a ~ Era, b ~ Era
 rule Sum(ret, a, b) ~ F =
@@ -58,8 +60,9 @@ rule Sum(ret, a, b) ~ F =
     Sum(sum, a_plus_1, b_2) ~ eq,
     Add(ret, a_4) ~ sum
 
-// Calculate the sum of all integers from 0 to 10
+// Calculate the sum of all integers from 0 to 10 and compare it with 55
 init
+    // Calculate sum from 0 to 10
     n5 ~ Succ(Succ(Succ(Succ(Succ(Zero))))),
     Dup(n5_1, n5_2) ~ n5,
     Dup(n5_3, n5_4) ~ n5_2,
