@@ -1,4 +1,4 @@
-use crate::parser::ast::*;
+use crate::{parser::ast::*, util::sort_tuple};
 use itertools::Itertools;
 
 // The syntax allows writing nested agents for convenience, this gets flattened during parsing.
@@ -92,15 +92,15 @@ pub fn unflatten_connections(connections: Vec<Connection>) -> Vec<NestedConnecti
     .collect_vec();
 
   // Inline nestable agents
-  // root ~ Succ(_0), Succ(_1) ~ _2, _1 ~ Zero, Succ(_3) ~ _0, _3 ~ Succ(_2)
-  // => root ~ Succ(Succ(Succ(Succ(Zero))))
+  // E.g. `root ~ Succ(_0), Succ(_1) ~ _2, _1 ~ Zero, Succ(_3) ~ _0, _3 ~ Succ(_2)`
+  // becomes `root ~ Succ(Succ(Succ(Succ(Zero))))`
 
   // Inline one candidate per iteration
   while {
-    let mut made_progress = false;
-
-    // Find link candidates that can be inlined: X ~ A(wire), wire ~ B(..)
-    let inline_candidates = connections
+    // Find link candidates that can be inlined:
+    // All port-to-agent connections like `wire ~ B(..)` are candidates, but they
+    // can only be inlined if `wire` is connected to an aux port, e.g. `X ~ A(wire)`
+    let mut inline_candidates = connections
       .iter()
       .enumerate()
       .filter_map(|(i, NestedConnection { lhs, rhs })| match (lhs, rhs) {
@@ -112,19 +112,25 @@ pub fn unflatten_connections(connections: Vec<Connection>) -> Vec<NestedConnecti
       })
       .collect_vec();
 
-    // Inline link candidates, remove in reverse order to avoid index invalidation
-    for (i, candidate, wire) in inline_candidates.into_iter().rev() {
-      // NOTE: Could cause stack overflow due to recursion
+    let mut made_progress = false; // Whether any candidate was inlined
+
+    // Try to inline candidates, iterate reversed to avoid index invalidation when removing from `connections`
+    while let Some((i, candidate, wire)) = inline_candidates.pop() {
+      // If `agent` contains `wire`, replace `wire` with `candidate` and return true, which
+      // means that the connection corresponding to this candidate can be removed from `connections`.
+      // Otherwise, return false.
       fn inline_agent(agent: &mut NestedAgent, candidate: &NestedAgent, wire: &PortName) -> bool {
         let NestedAgent { agent: _, ports } = agent;
         for connector in ports {
           match connector {
             NestedConnector::Agent(agent) => {
+              // Visit nested agents recursively
               if inline_agent(agent, candidate, wire) {
                 return true;
               }
             }
             NestedConnector::Port(port) => {
+              // Eliminate `wire` by inlining `candidate`
               if port == wire {
                 *connector = NestedConnector::Agent(candidate.clone());
                 return true;
@@ -135,6 +141,7 @@ pub fn unflatten_connections(connections: Vec<Connection>) -> Vec<NestedConnecti
         false
       }
 
+      // Iterate over all connectors and replace `wire` with `candidate`
       let mut inlined = false;
       for NestedConnection { lhs, rhs } in &mut connections {
         for connector in [lhs, rhs] {
@@ -142,6 +149,9 @@ pub fn unflatten_connections(connections: Vec<Connection>) -> Vec<NestedConnecti
             NestedConnector::Agent(agent) => {
               if inline_agent(agent, &candidate, &wire) {
                 inlined = true;
+
+                // There is exactly one connector that contains `wire`, e.g. `X ~ A(wire)`
+                // apart from the candidate connection itself (e.g. `wire ~ B(..)`), which is removed below.
                 break;
               }
             }
@@ -150,32 +160,47 @@ pub fn unflatten_connections(connections: Vec<Connection>) -> Vec<NestedConnecti
         }
       }
       if inlined {
+        // If an `Agent` connector (e.g. `B(..)`) was inlined into another
+        // (e.g. into `A(..)`, resulting in `X ~ A(B(..))`),
+        // then remove the `wire ~ B(..)` connection.
         connections.remove(i);
+
+        // Keep iterating as long as we make progress
         made_progress = true;
+
+        // By inlining one candidate, other candidates may become invalidated.
+        // Break here, so that we recompute `inline_candidates` in the next iteration.
         break;
       }
     }
     made_progress
   } {}
 
-  // Merge wire names
-  // root ~ Lam(_0, _1), _0 ~ _1 => root ~ Lam(_0, _0)
+  // Now merge wire names
+  // E.g. `root ~ Lam(_0, _1), _0 ~ _1` becomes `root ~ Lam(_0, _0)`
 
-  let merge_candidates = connections
+  // All port-to-port connections that don't involve `root` are merge candidates
+  let mut merge_candidates = connections
     .iter()
     .enumerate()
     .filter_map(|(i, NestedConnection { lhs, rhs })| match (lhs, rhs) {
       (NestedConnector::Port(a), NestedConnector::Port(b)) => {
-        let (a, b) = (a.min(b), a.max(b));
-        (b != ROOT_PORT_NAME).then(|| (i, a.clone(), b.clone()))
+        // Sort, so that `wire_to_use` is always the lower one,
+        // e.g. `root ~ Lam(_0, _1), _0 ~ _1` becomes `root ~ Lam(_0, _0)`, not `root ~ Lam(_1, _1)`
+        let (a, b) = sort_tuple((a, b));
+
+        // `root` is never a candidate for merging
+        (a != ROOT_PORT_NAME && b != ROOT_PORT_NAME).then(|| (i, a.clone(), b.clone()))
       }
       _ => None,
     })
     .collect_vec();
 
-  // Inline link candidates, remove in reverse order to avoid index invalidation
-  for (i, wire_to_use, wire_to_replace) in merge_candidates.into_iter().rev() {
-    // NOTE: Could cause stack overflow due to recursion
+  // Inline candidates, iterate reversed to avoid index invalidation when removing from `connections`
+  while let Some((i, wire_to_use, wire_to_replace)) = merge_candidates.pop() {
+    // Replaces `wire_to_replace` with `wire_to_use` in `connector` if it's found.
+    // Returns true if it was found and replaced, which means that the connection
+    // corresponding to this candidate can be removed from `connections`.
     fn replace_port(
       connector: &mut NestedConnector,
       wire_to_use: &PortName,
@@ -183,6 +208,7 @@ pub fn unflatten_connections(connections: Vec<Connection>) -> Vec<NestedConnecti
     ) -> bool {
       match connector {
         NestedConnector::Agent(NestedAgent { agent: _, ports }) => {
+          // Visit ports of nested agents recursively
           for connector in ports {
             if replace_port(connector, wire_to_use, wire_to_replace) {
               return true;
@@ -190,6 +216,10 @@ pub fn unflatten_connections(connections: Vec<Connection>) -> Vec<NestedConnecti
           }
         }
         NestedConnector::Port(port) => {
+          // E.g. if we have `root ~ Lam(_0, _1), _0 ~ _1` and the candidate
+          // is represented by `wire_to_use` == "_0" and `wire_to_replace` == "_1"
+          // and we are at the `port` named "_1", then we replace it with "_0".
+          // That's how `Lam(_0, _1)` becomes `Lam(_0, _0)`.
           if port == wire_to_replace {
             *port = wire_to_use.clone();
             return true;
@@ -199,16 +229,22 @@ pub fn unflatten_connections(connections: Vec<Connection>) -> Vec<NestedConnecti
       false
     }
 
+    // Iterate over all connectors and replace `wire_to_replace` with `wire_to_use`
     let mut replaced = false;
     for NestedConnection { lhs, rhs } in &mut connections {
       for connector in [lhs, rhs] {
         if replace_port(connector, &wire_to_use, &wire_to_replace) {
           replaced = true;
+
+          // There is exactly one connector that contains `wire_to_replace`,
+          // apart from the candidate connection itself (e.g. `_0 ~ _1`), which is removed below.
           break;
         }
       }
     }
     if replaced {
+      // If one end of a port-to-port connection (e.g. "_1") was replaced with the other end (e.g. "_0"),
+      // remove the connection from `connections` (e.g. `_0 ~ _1` in this example)
       connections.remove(i);
     }
   }

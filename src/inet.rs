@@ -342,7 +342,7 @@ impl INet {
       self.free_node(a);
       self.free_node(b);
 
-      // Add nodes created by rewrite as candidates for new active pairs
+      // Add nodes created by rewrite as candidates for new active pairs.
       // There are no duplicates in this chained iter, because these sets are disjoint
       let active_pair_candidate_nodes = active_pair_candidate_nodes.into_iter().chain(created_nodes);
 
@@ -375,7 +375,11 @@ impl INet {
     new_active_pairs
   }
 
-  /// Perform one reduction step
+  /// Perform one reduction step:
+  /// Scan for active pairs and rewrite the first one for which a rule exists.
+  /// Returns true if a rewrite happened, false otherwise (either because
+  /// there are no active pairs or because no rule applies to any of them).
+  /// Not efficient because of the rescan for active pairs, but useful for debugging.
   pub fn scan_active_pairs_and_reduce_step(&mut self, rule_book: &RuleBook) -> bool {
     for active_pair in self.scan_active_pairs() {
       if self.rewrite(active_pair, rule_book).is_some() {
@@ -391,7 +395,7 @@ impl INet {
   pub fn reduce(&mut self, rule_book: &RuleBook) -> usize {
     let mut reduction_count = 0;
     let mut active_pairs = VecDeque::from(self.scan_active_pairs());
-    // `active_pairs` is a queue, we process active pairs in the order they were found.
+    // `active_pairs` is a queue, we process active pairs in the order they were found:
     // Pop from the front while the queue is not empty, and push new active pairs to the back.
     while let Some(active_pair) = active_pairs.pop_front() {
       if let Some(new_active_pairs_created_by_rewrite) = self.rewrite(active_pair, rule_book) {
@@ -427,6 +431,7 @@ impl INet {
       }
 
       for port_idx in 0 .. node.ports.len() {
+        // src ~ dst
         let src = port(node_idx, port_idx);
         let dst = self[src];
 
@@ -464,7 +469,7 @@ impl INet {
             }
           }
 
-          // For each link, we create a `Connection`: src ~ dst
+          // For each link src ~ dst, we create a `Connection`
           let src = build_connector_from_port(self, &mut nodes_aux_port_names, &mut new_port_name, src);
           let dst = build_connector_from_port(self, &mut nodes_aux_port_names, &mut new_port_name, dst);
           connections.push(Connection::new(src, dst));

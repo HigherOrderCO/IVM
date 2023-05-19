@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 pub mod error;
 pub mod inet;
 pub mod inet_program;

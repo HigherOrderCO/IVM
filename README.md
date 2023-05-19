@@ -19,9 +19,9 @@ https://higherorderco.github.io/IVM-doc/doc/ivm/index.html
         - For the agents in the active pair of a rule LHS, auxiliary ports cannot be specified to be connected:
             - neither within one agent of the active pair (e.g. `A(a, a) ~ B` is not allowed)
             - nor between the two agents of the active pair (e.g. `X(a, b) ~ Y(a, d)` is not allowed)
-- Look at [`src/parser/ast.rs`](src/parser/ast.rs) to see how the AST is structured, how it gets validated and turned into an `INetProgram` via `ValidatedAst::into_inet_program`
-- Look at [`src/rule_book.rs`](src/rule_book.rs) to see how the rule book works
-- Look at [`src/inet.rs`](src/inet.rs) to see how the interaction net is implemented
+- Take a look at [`src/parser/ast.rs`](src/parser/ast.rs) to see how the AST is structured, how it gets validated and turned into an `INetProgram` via `ValidatedAst::into_inet_program`
+- Take a look at [`src/rule_book.rs`](src/rule_book.rs) to see how the rule book works
+- Take a look at [`src/inet.rs`](src/inet.rs) to see how the interaction net is implemented
 
 ## Running the examples
 ```sh
