@@ -1,6 +1,6 @@
 use crate::{
   error::{pass_output_and_errors_to_result, IvmResult, ProgramErrors},
-  inet::{port, INet, NodeIdx, NodePort},
+  inet::{port, INet, NodeIdx},
   inet_program::INetProgram,
   rule_book::{AgentId, RuleBook, ROOT_AGENT_ID},
 };
@@ -343,7 +343,7 @@ pub struct ValidatedAst {
 
 impl ValidatedAst {
   /// Generate an `INetProgram` from a `ValidatedAst`
-  pub fn to_inet_program(self) -> INetProgram {
+  pub fn into_inet_program(self) -> INetProgram {
     let Self { ast, rule_book } = self;
 
     let mut net = INet::default();

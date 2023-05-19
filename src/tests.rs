@@ -135,7 +135,7 @@ fn test_to_inet() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.to_inet_program();
+  let mut program = ast.into_inet_program();
   eprintln!("{:#?}", program.net);
   assert_eq!(program.net.active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.reduce_step(&program.rule_book));
@@ -158,7 +158,7 @@ fn test_reduce_inet() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.to_inet_program();
+  let mut program = ast.into_inet_program();
   eprintln!("{:#?}", program.net);
   assert_eq!(program.net.active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.reduce_step(&program.rule_book));
@@ -179,7 +179,7 @@ fn test_reduce_inet_basic() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.to_inet_program();
+  let mut program = ast.into_inet_program();
   eprintln!("{:#?}", program.net);
   assert_eq!(program.net.active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.reduce_step(&program.rule_book));
@@ -201,7 +201,7 @@ fn test_reduce_inet_ctor_era() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.to_inet_program();
+  let mut program = ast.into_inet_program();
   eprintln!("{:#?}", program.net);
   assert_eq!(program.net.active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.reduce_step(&program.rule_book));
@@ -221,7 +221,7 @@ fn test_reduce_inet_link_self_principal() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.to_inet_program();
+  let mut program = ast.into_inet_program();
   eprintln!("{:#?}", program.net);
   assert_eq!(program.net.active_pairs().len(), 0, "{}\n{:#?}", program.ast, program.net);
   assert!(!program.net.reduce_step(&program.rule_book));
@@ -238,7 +238,7 @@ fn test_reduce_inet_link_self_aux() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.to_inet_program();
+  let mut program = ast.into_inet_program();
   assert_eq!(program.net.active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.reduce_step(&program.rule_book));
   assert!(!program.net.reduce_step(&program.rule_book));
@@ -256,7 +256,7 @@ fn test_reduce_inet_link_self_double() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.to_inet_program();
+  let mut program = ast.into_inet_program();
   assert_eq!(program.net.active_pairs().len(), 2, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.reduce_step(&program.rule_book));
   assert!(!program.net.reduce_step(&program.rule_book));
@@ -275,7 +275,7 @@ fn test_reduce_inet_link_pair_single() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.to_inet_program();
+  let mut program = ast.into_inet_program();
   assert_eq!(program.net.active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.reduce_step(&program.rule_book));
   assert!(!program.net.reduce_step(&program.rule_book));
@@ -293,7 +293,7 @@ fn test_reduce_inet_link_pair_double() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.to_inet_program();
+  let mut program = ast.into_inet_program();
   assert_eq!(program.net.active_pairs().len(), 2, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.reduce_step(&program.rule_book));
   assert!(!program.net.reduce_step(&program.rule_book));
@@ -309,7 +309,7 @@ fn test_inet_validate_basic() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let program = ast.to_inet_program();
+  let program = ast.into_inet_program();
   eprintln!("{:#?}", program.net);
   Ok(())
 }
@@ -323,7 +323,7 @@ fn test_inet_validate() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let _program = ast.to_inet_program();
+  let _program = ast.into_inet_program();
   Ok(())
 }
 
@@ -339,7 +339,7 @@ fn test_inet_validate_transitive_connections() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let program = ast.to_inet_program();
+  let program = ast.into_inet_program();
   eprintln!("{:#?}", program.net);
   Ok(())
 }
@@ -365,7 +365,7 @@ fn test_inet_validate_transitive_connections_generated() -> IvmResult<()> {
     );
     let ast = Ast::parse(src)?;
     let ast = ast.validate(src)?;
-    let mut program = ast.to_inet_program();
+    let mut program = ast.into_inet_program();
     program.reduce();
   }
   Ok(())
@@ -401,7 +401,7 @@ fn test_read_back() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.to_inet_program();
+  let mut program = ast.into_inet_program();
   program.reduce();
   eprintln!("{:#?}", program.net);
   let result = program.read_back();
@@ -490,7 +490,7 @@ fn test_unary_arith() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.to_inet_program();
+  let mut program = ast.into_inet_program();
   program.reduce();
   let result = program.read_back();
   assert_eq!(result, "root ~ T");
@@ -553,7 +553,7 @@ fn test_lambda() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.to_inet_program();
+  let mut program = ast.into_inet_program();
   for step in 0 .. {
     let result = program.read_back();
     eprintln!("{step:2}: {result}");
@@ -568,13 +568,13 @@ fn test_lambda() -> IvmResult<()> {
 fn nat(n: usize) -> String {
   if n == 0 { "Zero".to_string() } else { format!("Succ({})", nat(n - 1)) }
 }
- */
+*/
 #[test]
 fn test_sum() -> IvmResult<()> {
   let src = include_str!("../examples/sum.ivm");
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.to_inet_program();
+  let mut program = ast.into_inet_program();
   program.reduce();
   let result = program.read_back();
 

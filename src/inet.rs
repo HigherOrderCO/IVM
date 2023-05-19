@@ -5,7 +5,7 @@ use crate::{
   rule_book::{AgentId, RuleBook},
   util::sort_tuple,
 };
-use hashbrown::{hash_map::Entry, HashMap};
+use hashbrown::HashMap;
 use itertools::Itertools;
 use std::{fmt, vec};
 
