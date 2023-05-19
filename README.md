@@ -7,7 +7,7 @@ https://higherorderco.github.io/IVM-doc/doc/ivm/index.html
 
 ## Understanding the code base
 - Take a look at the [sum example](examples/sum.ivm) (or at the [tests](src/tests.rs)) to get a feeling for the syntax:
-    - A `Connection` is written like `a ~ b`, where `a` and `b` are called `Connector`, which can be either a port or an agent
+    - A `Connection` is written like `a ~ b`. The two ends of a `Connection` are `Connector`s, which can be either a port or an agent
     - Agents are written like `A(a, b)`, where the auxiliary ports are written inside the parentheses, and the principal port is represented by the agent itself
         - E.g. `r ~ A(a, a)` means that `r` is connected to A's principal port, and A's auxiliary ports are connected to each other
         - Connections are transitive, so `r ~ A(a, b), a ~ b` would mean the same

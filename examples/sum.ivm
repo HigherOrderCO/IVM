@@ -8,7 +8,7 @@ rule Add(ret, a) ~ Zero = ret ~ a
 rule Add(ret, a) ~ Succ(b) = ret ~ Succ(cnt), Add(cnt, a) ~ b
 
 agent Era
-rule Era ~ Zero =
+rule Era ~ Zero = // Nada
 rule Era ~ Succ(p) = Era ~ p
 
 agent Dup(a, b)
@@ -22,8 +22,8 @@ rule Mul(ret, a) ~ Succ(b) = Dup(a2, a3) ~ a, Add(ret, a2) ~ cnt, Mul(cnt, a3) ~
 agent T
 agent F
 
-rule Era ~ T =
-rule Era ~ F =
+rule Era ~ T = // Nada
+rule Era ~ F = // Nada
 
 agent IsZero(ret)
 rule IsZero(ret) ~ Zero = ret ~ T
@@ -38,12 +38,12 @@ rule Sub(ret, a) ~ Zero = ret ~ a
 rule Sub(ret, a) ~ Succ(b) = Pred(pa) ~ a, Sub(ret, pa) ~ b,
 
 agent AbsDiff(ret, a)
-// rule AbsDiff(ret, a) ~ b = Add(ret, x) ~ y, Sub(x, a) ~ b, Sub(y, b) ~ a
+// rule[b: Nat] AbsDiff(ret, a) ~ b = Add(ret, x) ~ y, Sub(x, a) ~ b, Sub(y, b) ~ a
 rule AbsDiff(ret, a) ~ Zero = ret ~ a
 rule AbsDiff(ret, a) ~ Succ(b) = Add(ret, x) ~ y, Sub(x, a2) ~ Succ(b2), Sub(y, Succ(b3)) ~ a3, Dup(a2, a3) ~ a, Dup(b2, b3) ~ b
 
 agent Eq(ret, a)
-// rule Eq(ret, a) ~ b = IsZero(ret) ~ d, AbsDiff(d, a) ~ b
+// rule[b: Nat] Eq(ret, a) ~ b = IsZero(ret) ~ d, AbsDiff(d, a) ~ b
 rule Eq(ret, a) ~ Zero = IsZero(ret) ~ a
 rule Eq(ret, a) ~ Succ(b) = IsZero(ret) ~ d, AbsDiff(d, a) ~ Succ(b)
 

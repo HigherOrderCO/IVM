@@ -8,6 +8,7 @@ use crate::{
 use hashbrown::HashMap;
 use itertools::Itertools;
 use std::{
+  collections::VecDeque,
   fmt,
   ops::{Index, IndexMut},
   vec,
@@ -89,7 +90,7 @@ impl INet {
   }
 
   /// Validate the inet, panics if invalid, useful for debugging/tests
-  /// If an INet generated from a valid AST fails validation, it's a bug
+  /// If an INet generated from a valid AST fails validation, it'd be a bug
   pub fn validate(&self) {
     let mut used_node_count = 0;
     for (node_idx, node) in self.nodes.iter().enumerate() {
@@ -111,6 +112,129 @@ impl INet {
       }
     }
     assert!(used_node_count >= 2, "Interaction net has {used_node_count} < 2 nodes:\n{self:#?}");
+  }
+
+  /// Add a `Connector` to the net, only called by `INet::add_connections`.
+  /// If the connector is a port, `Err(port_name)` is returned so that it can be linked later.
+  /// If the connector is an agent, it is added as a new node and its principal port is returned as `Ok(port)`.
+  /// Connections to auxiliary ports are added to `deferred_port_links` so that they can be linked later.
+  fn add_connector<'a, 'b: 'a>(
+    &mut self,
+    connector: &'b Connector,
+    deferred_port_links: &'a mut MaybeLinkedPorts<'b>,
+    agent_name_to_id: &HashMap<AgentName, AgentId>,
+    created_nodes: &mut CreatedNodes,
+  ) -> MaybeLinkedPort<'b> {
+    match connector {
+      Connector::Agent(agent) => {
+        // Create agent node
+        let agent_name = agent.agent.clone();
+        let Agent { agent, ports } = agent;
+        let agent_id = agent_name_to_id[agent];
+        let node_idx = self.new_node(agent_id, 1 + ports.len());
+        self[node_idx].agent_name = agent_name;
+
+        for (i, port_name) in ports.iter().enumerate() {
+          let port = port(node_idx, 1 + i); // +1 to skip principal port
+
+          // Queue up connection to link it later
+          deferred_port_links.push([Err(port_name), Ok(port)]);
+        }
+
+        // Keep track of created nodes so that we can determine active pairs created by this rewrite
+        created_nodes.push(node_idx);
+
+        // An agent node has no deps so it can always be created.
+        // Return principal port of the created agent node in this net
+        Ok(port(node_idx, 0))
+      }
+      Connector::Port(port) => Err(port), // Can only be linked later
+    }
+  }
+
+  /// Add connections to the net, either when creating a net from scratch or inserting a sub-net
+  /// during a rewrite. `external_ports` is a map from port names to ports in the parent net.
+  /// When creating a net from scratch (in `ValidatedAst::into_inet_program`),
+  /// `external_ports` only contains the `root` port.
+  /// When called by `RuleBook::apply`, `external_ports` contains the ports of the parent net that
+  /// the rule's RHS sub-net is connected to, based on which INet ports the rule's LHS (active pair)
+  /// aux port names map to, in that context of the local rewrite.
+  pub fn add_connections<'a>(
+    &mut self,
+    connections: &'a [Connection],
+    external_ports: MaybeLinkedPorts<'a>,
+    agent_name_to_id: &HashMap<AgentName, AgentId>,
+  ) -> CreatedNodes {
+    /// Follow connections to find the target of a `port_name` that it resolves to.
+    /// Returns `Ok(port)` if the target port could be found, `Err(port_name)` otherwise.
+    /// Connections are removed (consumed) from `deferred_port_links` as they are followed.
+    /// E.g. if `deferred_port_links` is `[Err("x") ~ Err("y"), Err("y") ~ port]` and `port_name` is "x",
+    /// `Ok(port)` is returned and `deferred_port_links` is updated to `[]` as the followed links were consumed.
+    /// As long as `deferred_port_links` is not empty, there are still unresolved ports to be linked.
+    fn port_target<'a, 'b: 'a>(
+      deferred_port_links: &'a mut MaybeLinkedPorts<'b>,
+      port_name: PortNameRef<'b>,
+    ) -> MaybeLinkedPort<'b> {
+      let mut target: MaybeLinkedPort = Err(port_name);
+      while let Some((i, connector)) = deferred_port_links.iter().enumerate().find_map(|(i, [lhs, rhs])| {
+        if lhs == &target {
+          Some((i, *rhs))
+        } else if rhs == &target {
+          Some((i, *lhs))
+        } else {
+          None
+        }
+      }) {
+        // Found connection target of `port_name`, remove the connection
+        let _ = deferred_port_links.swap_remove(i);
+
+        target = connector;
+        if target.is_ok() {
+          break;
+          // If the connector is `Err(port_name)`, continue looking up further
+        }
+      }
+      target
+    }
+
+    // We keep track of connections that are not linked together yet, as unordered pairs of ports.
+    // Unlinked ports are represented by Err(name), linked ports by Ok(port).
+    // We pre-populate `deferred_port_links` with `external_ports`:
+    let mut deferred_port_links = external_ports;
+
+    let mut created_nodes = vec![];
+
+    // Add all connectors of all connections to `deferred_port_links`
+    for Connection { lhs, rhs } in connections {
+      let lhs = self.add_connector(&lhs, &mut deferred_port_links, agent_name_to_id, &mut created_nodes);
+      let rhs = self.add_connector(&rhs, &mut deferred_port_links, agent_name_to_id, &mut created_nodes);
+      deferred_port_links.push([lhs, rhs]);
+    }
+
+    // At this point, `deferred_port_links` contains all pairs of ports that need to be linked
+
+    // Link all pairs of ports that could not be linked yet
+    while let Some([lhs, rhs]) = deferred_port_links.pop() {
+      match (lhs, rhs) {
+        (Ok(lhs), Ok(rhs)) => {
+          // Both connectors are resolved to ports, thus ready to be linked
+          self.link(lhs, rhs);
+        }
+        (Ok(node_port), Err(port_name)) | (Err(port_name), Ok(node_port)) => {
+          // Look up the connection target of `port_name` and queue the connection for later linking
+          let target = port_target(&mut deferred_port_links, port_name);
+          deferred_port_links.push([target, Ok(node_port)]);
+        }
+        (Err(lhs), Err(rhs)) => {
+          // Look up the connection target of both connectors, and queue the connection for later linking
+          let lhs = port_target(&mut deferred_port_links, lhs);
+          let rhs = port_target(&mut deferred_port_links, rhs);
+          deferred_port_links.push([lhs, rhs]);
+        }
+      }
+    }
+
+    created_nodes
   }
 
   /// Determines if a given node is part of an active pair and returns the other node in the pair
@@ -265,21 +389,15 @@ impl INet {
   /// Only scans the net for active pairs in the beginning. After each rewrite, new active pairs are found by
   /// checking the nodes involved in and adjacent to the rewritten sub-net.
   pub fn reduce(&mut self, rule_book: &RuleBook) -> usize {
-    // These Vecs are reused between reduction steps to reduce allocations
-    let mut active_pairs = self.scan_active_pairs();
-    let mut new_active_pairs = vec![];
-
     let mut reduction_count = 0;
-    while !active_pairs.is_empty() {
-      // At this point, `new_active_pairs` is empty and `active_pairs` contains all currently active pairs
-      for active_pair in active_pairs.drain(..) {
-        if let Some(new_active_pairs_created_by_rewrite) = self.rewrite(active_pair, rule_book) {
-          new_active_pairs.extend(new_active_pairs_created_by_rewrite);
-          reduction_count += 1;
-        }
+    let mut active_pairs = VecDeque::from(self.scan_active_pairs());
+    // `active_pairs` is a queue, we process active pairs in the order they were found.
+    // Pop from the front while the queue is not empty, and push new active pairs to the back.
+    while let Some(active_pair) = active_pairs.pop_front() {
+      if let Some(new_active_pairs_created_by_rewrite) = self.rewrite(active_pair, rule_book) {
+        active_pairs.extend(new_active_pairs_created_by_rewrite);
+        reduction_count += 1;
       }
-      // At this point, `active_pairs` is empty and `new_active_pairs` contains all new active pairs
-      active_pairs.extend(new_active_pairs.drain(..)); // Reusing Vecs between iterations
     }
     reduction_count
   }
@@ -354,127 +472,6 @@ impl INet {
       }
     }
     connections
-  }
-
-  /// Add a `Connector` to the net
-  /// If the connector is a port, `Err(port_name)` is returned so that it can be linked later.
-  /// If the connector is an agent, it is added as a new node and its principal port is returned as `Ok(port)`.
-  /// Connections to auxiliary ports are added to `deferred_port_links` so that they can be linked later.
-  fn add_connector<'a, 'b: 'a>(
-    &mut self,
-    connector: &'b Connector,
-    deferred_port_links: &'a mut MaybeLinkedPorts<'b>,
-    agent_name_to_id: &HashMap<AgentName, AgentId>,
-    created_nodes: &mut CreatedNodes,
-  ) -> MaybeLinkedPort<'b> {
-    match connector {
-      Connector::Agent(agent) => {
-        // Create agent node
-        let agent_name = agent.agent.clone();
-        let Agent { agent, ports } = agent;
-        let agent_id = agent_name_to_id[agent];
-        let node_idx = self.new_node(agent_id, 1 + ports.len());
-        self[node_idx].agent_name = agent_name;
-
-        for (i, port_name) in ports.iter().enumerate() {
-          let port = port(node_idx, 1 + i); // +1 to skip principal port
-
-          // Queue up connection to link it later
-          deferred_port_links.push([Err(port_name), Ok(port)]);
-        }
-
-        // Keep track of created nodes so that we can determine active pairs created by this rewrite
-        created_nodes.push(node_idx);
-
-        // An agent node has no deps so it can always be created.
-        // Return principal port of the created agent node in this net
-        Ok(port(node_idx, 0))
-      }
-      Connector::Port(port) => Err(port), // Can only be linked later
-    }
-  }
-
-  /// Add connections to the net, either when creating a net from scratch or inserting a sub-net
-  /// during a rewrite. `external_ports` is a map from port names to ports in the parent net.
-  /// When creating a net from scratch, `external_ports` only contains the `root` port.
-  /// When called by `RuleBook::apply`, `external_ports` contains the ports of the parent net that
-  /// the rule's RHS sub-net is connected to, based on which INet ports the rule's LHS (active pair)
-  /// aux port names map to, in that context of the local rewrite.
-  pub fn add_connections<'a>(
-    &mut self,
-    connections: &'a [Connection],
-    external_ports: MaybeLinkedPorts<'a>,
-    agent_name_to_id: &HashMap<AgentName, AgentId>,
-  ) -> CreatedNodes {
-    /// Follow connections to find the target of a `port_name` that it resolves to.
-    /// Returns `Ok(port)` if the target port could be found, `Err(port_name)` otherwise.
-    /// Connections are removed (consumed) from `deferred_port_links` as they are followed.
-    /// E.g. if `deferred_port_links` is `[Err("x") ~ Err("y"), Err("y") ~ port]` and `port_name` is "x",
-    /// `Ok(port)` is returned and `deferred_port_links` is updated to `[]` as the followed links were consumed.
-    /// As long as `deferred_port_links` is not empty, there are still unresolved ports to be linked.
-    fn port_target<'a, 'b: 'a>(
-      deferred_port_links: &'a mut MaybeLinkedPorts<'b>,
-      port_name: PortNameRef<'b>,
-    ) -> MaybeLinkedPort<'b> {
-      let mut target: MaybeLinkedPort = Err(port_name);
-      while let Some((i, connector)) = deferred_port_links.iter().enumerate().find_map(|(i, [lhs, rhs])| {
-        if lhs == &target {
-          Some((i, *rhs))
-        } else if rhs == &target {
-          Some((i, *lhs))
-        } else {
-          None
-        }
-      }) {
-        // Found connection target of `port_name`, remove the connection
-        let _ = deferred_port_links.swap_remove(i);
-
-        target = connector;
-        if target.is_ok() {
-          break;
-          // If the connector is `Err(port_name)`, continue looking up further
-        }
-      }
-      target
-    }
-
-    // We keep track of connections that are not linked together yet, as unordered pairs of ports.
-    // Unlinked ports are represented by Err(name), linked ports by Ok(port).
-    // We pre-populate `deferred_port_links` with `external_ports`:
-    let mut deferred_port_links = external_ports;
-
-    let mut created_nodes = vec![];
-
-    // Add all connectors of all connections to `deferred_port_links`
-    for Connection { lhs, rhs } in connections {
-      let lhs = self.add_connector(&lhs, &mut deferred_port_links, agent_name_to_id, &mut created_nodes);
-      let rhs = self.add_connector(&rhs, &mut deferred_port_links, agent_name_to_id, &mut created_nodes);
-      deferred_port_links.push([lhs, rhs]);
-    }
-    // At this point, `deferred_port_links` contains all pairs of ports that still need to be linked
-
-    // Link all pairs of ports that could not be linked yet
-    while let Some([lhs, rhs]) = deferred_port_links.pop() {
-      match (lhs, rhs) {
-        (Ok(lhs), Ok(rhs)) => {
-          // Both connectors are ready to be linked
-          self.link(lhs, rhs);
-        }
-        (Ok(node_port), Err(port_name)) | (Err(port_name), Ok(node_port)) => {
-          // Look up the connection target of `port_name` and queue the connection for later linking
-          let target = port_target(&mut deferred_port_links, port_name);
-          deferred_port_links.push([target, Ok(node_port)]);
-        }
-        (Err(lhs), Err(rhs)) => {
-          // Look up the connection target of both connectors, and queue the connection for later linking
-          let lhs = port_target(&mut deferred_port_links, lhs);
-          let rhs = port_target(&mut deferred_port_links, rhs);
-          deferred_port_links.push([lhs, rhs]);
-        }
-      }
-    }
-
-    created_nodes
   }
 }
 
