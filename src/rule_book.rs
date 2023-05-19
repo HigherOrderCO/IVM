@@ -16,7 +16,7 @@ pub type AgentId = usize;
 pub const ROOT_AGENT_ID: AgentId = 0;
 
 /// Ordered pair of AgentIds represents active pair
-/// So that we only have to store one mapping to cover A~B and B~A
+/// So that we only have to store one mapping to cover A ~ B and B ~ A
 type RuleLhs = (AgentId, AgentId);
 
 struct RuleRhs {
@@ -47,11 +47,11 @@ impl RuleBook {
   pub fn add_rule(&mut self, rule: &Rule, rule_src: &str, errors: &mut ProgramErrors) {
     let Rule { lhs: active_pair, rhs: rule_rhs, span } = rule;
 
-    // Construct RuleLhs, ordered pair of agent IDs
     let ActivePair { lhs: lhs_agent, rhs: rhs_agent } = active_pair;
     let lhs_id = self.agent_name_to_id[&lhs_agent.agent];
     let rhs_id = self.agent_name_to_id[&rhs_agent.agent];
-    // Also order agents along with agent_id
+
+    // Construct RuleLhs, ordered pair of AgentIDs. Order agents along with AgentIDs
     let ((lhs_id, lhs_agent), (rhs_id, rhs_agent)) =
       sort_tuples_by_fst(((lhs_id, lhs_agent), (rhs_id, rhs_agent)));
     let key = (lhs_id, rhs_id); // Ordered pair
@@ -72,11 +72,11 @@ impl RuleBook {
   /// Apply rule to active pair if such a rule exists
   /// Returns indices of created nodes if a rule was applied, None otherwise
   pub fn apply(&self, net: &mut INet, active_pair: (NodeIdx, NodeIdx)) -> Option<CreatedNodes> {
-    // Construct RuleLhs, ordered pair of agent IDs
     let (node_idx_lhs, node_idx_rhs) = active_pair;
     let (lhs_node, rhs_node) = (&net[node_idx_lhs], &net[node_idx_rhs]);
     let (lhs_id, rhs_id) = (lhs_node.agent_id, rhs_node.agent_id);
-    // Also order nodes along with agent_id
+
+    // Construct RuleLhs, ordered pair of AgentIDs. Order nodes along with AgentIDs
     let ((lhs_id, lhs_node), (rhs_id, rhs_node)) =
       sort_tuples_by_fst(((lhs_id, lhs_node), (rhs_id, rhs_node)));
     let key = (lhs_id, rhs_id); // Ordered pair
