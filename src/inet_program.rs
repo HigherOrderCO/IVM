@@ -12,14 +12,14 @@ pub struct INetProgram {
 }
 
 impl INetProgram {
-  /// Reduce the net using the rule book
-  pub fn reduce(&mut self) -> usize {
-    self.net.reduce_full(&self.rule_book)
+  /// Perform one reduction step
+  pub fn scan_active_pairs_and_reduce_step(&mut self) -> bool {
+    self.net.scan_active_pairs_and_reduce_step(&self.rule_book)
   }
 
-  /// Perform one reduction step
-  pub fn reduce_step(&mut self) -> bool {
-    self.net.reduce_step(&self.rule_book)
+  /// Reduce the net using the rule book
+  pub fn reduce(&mut self) -> usize {
+    self.net.reduce(&self.rule_book)
   }
 
   /// Read back reduced net into readable (nested) textual form

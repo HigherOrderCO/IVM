@@ -1,5 +1,10 @@
 # IVM
 
+Interaction net virtual machine
+
+## Rust Docs
+https://higherorderco.github.io/IVM-doc/doc/ivm/index.html
+
 ## Understanding the code base
 - Take a look at the [sum example](examples/sum.ivm) (or at the [tests](src/tests.rs)) to get a feeling for the syntax:
     - A `Connection` is written like `a ~ b`, where `a` and `b` are called `Connector`, which can be either a port or an agent

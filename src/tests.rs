@@ -137,8 +137,8 @@ fn test_to_inet() -> IvmResult<()> {
   let ast = ast.validate(src)?;
   let mut program = ast.into_inet_program();
   eprintln!("{:#?}", program.net);
-  assert_eq!(program.net.active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
-  assert!(program.net.reduce_step(&program.rule_book));
+  assert_eq!(program.net.scan_active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
+  assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   Ok(())
 }
 
@@ -160,12 +160,12 @@ fn test_reduce_inet() -> IvmResult<()> {
   let ast = ast.validate(src)?;
   let mut program = ast.into_inet_program();
   eprintln!("{:#?}", program.net);
-  assert_eq!(program.net.active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
-  assert!(program.net.reduce_step(&program.rule_book));
+  assert_eq!(program.net.scan_active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
+  assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   program.reduce();
   eprintln!("{:#?}", program.net);
-  eprintln!("program.net.active_pairs(): {:#?}", program.net.active_pairs());
-  assert_eq!(program.net.active_pairs(), vec![(0, 3)], "{}\n{:#?}", program.ast, program.net);
+  eprintln!("program.net.active_pairs(): {:#?}", program.net.scan_active_pairs());
+  assert_eq!(program.net.scan_active_pairs(), vec![(0, 3)], "{}\n{:#?}", program.ast, program.net);
   Ok(())
 }
 
@@ -181,11 +181,11 @@ fn test_reduce_inet_basic() -> IvmResult<()> {
   let ast = ast.validate(src)?;
   let mut program = ast.into_inet_program();
   eprintln!("{:#?}", program.net);
-  assert_eq!(program.net.active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
-  assert!(program.net.reduce_step(&program.rule_book));
-  assert!(!program.net.reduce_step(&program.rule_book));
+  assert_eq!(program.net.scan_active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
+  assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
+  assert!(!program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   eprintln!("{:#?}", program.net);
-  eprintln!("program.net.active_pairs(): {:#?}", program.net.active_pairs());
+  eprintln!("program.net.active_pairs(): {:#?}", program.net.scan_active_pairs());
   Ok(())
 }
 
@@ -203,13 +203,13 @@ fn test_reduce_inet_ctor_era() -> IvmResult<()> {
   let ast = ast.validate(src)?;
   let mut program = ast.into_inet_program();
   eprintln!("{:#?}", program.net);
-  assert_eq!(program.net.active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
-  assert!(program.net.reduce_step(&program.rule_book));
-  assert!(program.net.reduce_step(&program.rule_book));
-  assert!(!program.net.reduce_step(&program.rule_book));
+  assert_eq!(program.net.scan_active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
+  assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
+  assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
+  assert!(!program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   eprintln!("{:#?}", program.net);
-  eprintln!("program.net.active_pairs(): {:#?}", program.net.active_pairs());
-  assert_eq!(program.net.active_pairs(), vec![(0, 4)], "{}\n{:#?}", program.ast, program.net);
+  eprintln!("program.net.active_pairs(): {:#?}", program.net.scan_active_pairs());
+  assert_eq!(program.net.scan_active_pairs(), vec![(0, 4)], "{}\n{:#?}", program.ast, program.net);
   Ok(())
 }
 
@@ -223,8 +223,8 @@ fn test_reduce_inet_link_self_principal() -> IvmResult<()> {
   let ast = ast.validate(src)?;
   let mut program = ast.into_inet_program();
   eprintln!("{:#?}", program.net);
-  assert_eq!(program.net.active_pairs().len(), 0, "{}\n{:#?}", program.ast, program.net);
-  assert!(!program.net.reduce_step(&program.rule_book));
+  assert_eq!(program.net.scan_active_pairs().len(), 0, "{}\n{:#?}", program.ast, program.net);
+  assert!(!program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   Ok(())
 }
 
@@ -239,9 +239,9 @@ fn test_reduce_inet_link_self_aux() -> IvmResult<()> {
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
   let mut program = ast.into_inet_program();
-  assert_eq!(program.net.active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
-  assert!(program.net.reduce_step(&program.rule_book));
-  assert!(!program.net.reduce_step(&program.rule_book));
+  assert_eq!(program.net.scan_active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
+  assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
+  assert!(!program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   eprintln!("{:#?}", program.net);
   Ok(())
 }
@@ -257,11 +257,11 @@ fn test_reduce_inet_link_self_double() -> IvmResult<()> {
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
   let mut program = ast.into_inet_program();
-  assert_eq!(program.net.active_pairs().len(), 2, "{}\n{:#?}", program.ast, program.net);
-  assert!(program.net.reduce_step(&program.rule_book));
-  assert!(!program.net.reduce_step(&program.rule_book));
+  assert_eq!(program.net.scan_active_pairs().len(), 2, "{}\n{:#?}", program.ast, program.net);
+  assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
+  assert!(!program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   eprintln!("{:#?}", program.net);
-  assert_eq!(program.net.active_pairs(), vec![(0, 3)], "{}\n{:#?}", program.ast, program.net);
+  assert_eq!(program.net.scan_active_pairs(), vec![(0, 3)], "{}\n{:#?}", program.ast, program.net);
   Ok(())
 }
 
@@ -276,9 +276,9 @@ fn test_reduce_inet_link_pair_single() -> IvmResult<()> {
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
   let mut program = ast.into_inet_program();
-  assert_eq!(program.net.active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
-  assert!(program.net.reduce_step(&program.rule_book));
-  assert!(!program.net.reduce_step(&program.rule_book));
+  assert_eq!(program.net.scan_active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
+  assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
+  assert!(!program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   eprintln!("{:#?}", program.net);
   Ok(())
 }
@@ -294,9 +294,9 @@ fn test_reduce_inet_link_pair_double() -> IvmResult<()> {
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
   let mut program = ast.into_inet_program();
-  assert_eq!(program.net.active_pairs().len(), 2, "{}\n{:#?}", program.ast, program.net);
-  assert!(program.net.reduce_step(&program.rule_book));
-  assert!(!program.net.reduce_step(&program.rule_book));
+  assert_eq!(program.net.scan_active_pairs().len(), 2, "{}\n{:#?}", program.ast, program.net);
+  assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
+  assert!(!program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   eprintln!("{:#?}", program.net);
   Ok(())
 }
@@ -557,7 +557,7 @@ fn test_lambda() -> IvmResult<()> {
   for step in 0 .. {
     let result = program.read_back();
     eprintln!("{step:2}: {result}");
-    if !program.net.reduce_step(&program.rule_book) {
+    if !program.net.scan_active_pairs_and_reduce_step(&program.rule_book) {
       assert_eq!(result, "root ~ Dup(Lam(_4, _4), Lam(_2, _2))");
       break;
     }

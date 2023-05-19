@@ -22,7 +22,7 @@ fn main() -> Result<()> {
   /* println!("{}", program.read_back());
   let mut reduction_count = 0;
   let mut prev_states = HashSet::new();
-  while program.reduce_step() {
+  while program.scan_active_pairs_and_reduce_step() {
     let result = program.read_back();
     println!("[{reduction_count}] {result}");
     reduction_count += 1;

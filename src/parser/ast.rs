@@ -12,9 +12,10 @@ use itertools::Itertools;
 /// The first node in a net is the root node
 pub const ROOT_NODE_IDX: NodeIdx = 0;
 
+/// Port name of the root node in `init` connections
 pub const ROOT_PORT_NAME: &str = "root";
 
-/// Matches Token::KeywordInit
+/// Matches `Token::KeywordInit`
 pub const INIT_CONNECTIONS: &str = "init";
 
 /// Starts with uppercase letter (Token::Agent)
@@ -336,6 +337,7 @@ impl Ast {
   }
 }
 
+/// A validated AST and its corresponding `RuleBook`
 pub struct ValidatedAst {
   pub ast: Ast,
   pub rule_book: RuleBook,

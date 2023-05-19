@@ -121,7 +121,7 @@ impl INet {
   }
 
   /// Determine active pairs that can potentially be rewritten if there is a matching rule
-  pub fn active_pairs(&self) -> ActivePairs {
+  pub fn scan_active_pairs(&self) -> ActivePairs {
     let mut active_pairs = vec![];
     for (node_idx, node) in self.nodes.iter().enumerate() {
       if !node.used {
@@ -252,8 +252,8 @@ impl INet {
   }
 
   /// Perform one reduction step
-  pub fn reduce_step(&mut self, rule_book: &RuleBook) -> bool {
-    for active_pair in self.active_pairs() {
+  pub fn scan_active_pairs_and_reduce_step(&mut self, rule_book: &RuleBook) -> bool {
+    for active_pair in self.scan_active_pairs() {
       if self.rewrite(active_pair, rule_book).is_some() {
         return true;
       }
@@ -264,9 +264,11 @@ impl INet {
   /// Reduce net until no more reductions are possible, without rescanning for active pairs after each rewrite.
   /// Only scans the net for active pairs in the beginning. After each rewrite, new active pairs are found by
   /// checking the nodes involved in and adjacent to the rewritten sub-net.
-  pub fn reduce_full(&mut self, rule_book: &RuleBook) -> usize {
-    let mut active_pairs = self.active_pairs();
+  pub fn reduce(&mut self, rule_book: &RuleBook) -> usize {
+    // These Vecs are reused between reduction steps to reduce allocations
+    let mut active_pairs = self.scan_active_pairs();
     let mut new_active_pairs = vec![];
+
     let mut reduction_count = 0;
     while !active_pairs.is_empty() {
       // At this point, `new_active_pairs` is empty and `active_pairs` contains all currently active pairs
@@ -476,6 +478,7 @@ impl INet {
   }
 }
 
+/// Represents the nodes created by a rewrite (when `RuleBook::apply` calls `INet::add_connections`)
 pub type CreatedNodes = Vec<NodeIdx>;
 
 /// Represents a connection between two ports for deferred linking
@@ -483,6 +486,7 @@ pub type CreatedNodes = Vec<NodeIdx>;
 type MaybeLinkedPort<'a> = Result<NodePort, PortNameRef<'a>>;
 type MaybeLinkedPorts<'a> = Vec<[MaybeLinkedPort<'a>; 2]>;
 
+/// Represents active pairs of nodes in a net
 type ActivePairs = Vec<(NodeIdx, NodeIdx)>;
 
 // Indexing utils to allow indexing an INet with a NodeIdx and NodePort
