@@ -7,7 +7,11 @@ use crate::{
 };
 use hashbrown::HashMap;
 use itertools::Itertools;
-use std::{fmt, vec};
+use std::{
+  fmt,
+  ops::{Index, IndexMut},
+  vec,
+};
 
 pub type NodeIdx = usize;
 pub type PortIdx = usize;
@@ -22,9 +26,9 @@ pub struct Node {
   pub agent_id: AgentId,
 
   /// 0: principal port
-  pub ports: Vec<NodePort>, // TODO: Use smallvec for reducing heap allocations
+  pub ports: Vec<NodePort>,
 
-  pub agent_name: AgentName, // TODO: Remove. Map agent_id to agent_name for readback
+  pub agent_name: AgentName,
 }
 
 /// A port in the INet
@@ -41,10 +45,12 @@ impl fmt::Display for NodePort {
   }
 }
 
+/// Construct a NodePort that can be used to index into INet
 pub fn port(node_idx: NodeIdx, port_idx: PortIdx) -> NodePort {
   NodePort { node_idx, port_idx }
 }
 
+/// This represents the interaction net
 #[derive(Default, Debug, Clone)]
 pub struct INet {
   pub nodes: Vec<Node>,
@@ -62,6 +68,7 @@ impl INet {
         node_idx
       }
     };
+
     let node = &mut self[node_idx];
     node.used = true;
     node.agent_id = agent_id;
@@ -81,7 +88,7 @@ impl INet {
     self[b] = a;
   }
 
-  /// Validate inet, panics if invalid, useful for debugging/tests
+  /// Validate the inet, panics if invalid, useful for debugging/tests
   /// If an INet generated from a valid AST fails validation, it's a bug
   pub fn validate(&self) {
     let mut used_node_count = 0;
@@ -89,6 +96,7 @@ impl INet {
       if node.used {
         used_node_count += 1;
 
+        assert_ne!(node.ports.len(), 0, "Nodes must have at least one port:\n{node:#?}");
         for port_idx in 0 .. node.ports.len() {
           let src = port(node_idx, port_idx);
           let dst = self[src];
@@ -105,6 +113,7 @@ impl INet {
     assert!(used_node_count >= 2, "Interaction net has {used_node_count} < 2 nodes:\n{self:#?}");
   }
 
+  /// Determines if a given node is part of an active pair and returns the other node in the pair
   fn node_is_part_of_active_pair(&self, node_idx: NodeIdx) -> Option<NodeIdx> {
     let dst = self[port(node_idx, 0)];
     // After validation, we can assume that dst.node_idx == node_idx
@@ -120,6 +129,7 @@ impl INet {
       }
 
       if let Some(dst_node_idx) = self.node_is_part_of_active_pair(node_idx) {
+        // Only process each bidirectional link once, to prevent duplicates
         if node_idx < dst_node_idx {
           active_pairs.push((node_idx, dst_node_idx));
         }
@@ -149,7 +159,7 @@ impl INet {
     // as candidates, because their principal ports are already connected to each other's.)
     // (Also note that we don't have to dedup A's and B's candidates, because each node
     // can only be a candidate once because it only has one principal port.)
-    // After the rewrite, we add nodes as candidates that were created during the rewrite
+    // After the rewrite, we add the nodes as candidates that were created during the rewrite.
     let active_pair_candidate_nodes = self[a]
       .ports
       .iter()
@@ -159,28 +169,28 @@ impl INet {
       .map(|port| port.node_idx)
       .collect::<Vec<_>>();
 
-    // If active pair contains two references to the same wire, we have to link
-    // the target of both references afterwards, so that the nodes can be freed
-    // Case A(a, b) ~ B(c, c) -> link(self[port(b, 1)], self[port(b, 2)])
-    // Case A(a, b) ~ B(b, c) -> link(self[port(a, 2)], self[port(b, 0)])
-    // Case A(a, b) ~ B(a, b) -> link(self[port(a, 1)], self[port(b, 1)])
-    //                       and link(self[port(a, 2)], self[port(b, 2)])
-    // Case A(a, a) ~ B(b, b) -> link(self[port(a, 1)], self[port(a, 2)])
-    //                       and link(self[port(b, 1)], self[port(b, 2)])
-    // If any port of A or B is linked to any port of A or B, we temporarily
-    // break the link by adding an intermediary node (with 2 ports because it
-    // represents a wire going through it). After doing the rewrite, we link
-    // both target ports of the intermediary node together and free it.
-
+    /*
+    The rewrite mechanism assumes that all wires between aux ports of the active pair
+    and the rest of the net are unique. E.g. `A(a, a) ~ B` or `A(a) ~ B(a)` would be a problem.
+    Our workaround: If the active pair contains two references to the same wire,
+    we split the wire into two, by inserting a temporary intermediary node:
+    E.g. `A(a, a) ~ B` becomes `A(a, b) ~ B, a ~ TMP(b)`
+    E.g. `A(a) ~ B(a)` becomes `A(a) ~ B(b), a ~ TMP(b)`
+    This is done by adding an intermediary node with two ports, one of which is linked to each
+    of the two aux ports that were previously using the same wire (like a wire going through it).
+    Then the rewrite is performed as usual, and afterwards the two ports of the intermediary
+    node are linked together and the intermediary node is removed.
+    */
     const INTERMEDIARY_AGENT_ID: AgentId = usize::MAX;
-    let mut intermediary_nodes = vec![]; // TODO: Reuse between rewrites
+    let mut intermediary_nodes = vec![];
     for node_idx in [a, b] {
       for port_idx in 0 .. self[node_idx].ports.len() {
         let dst = self[node_idx][port_idx];
         if dst.node_idx == a || dst.node_idx == b {
-          // Create intermediary node temporarily until after rewrite
-          // E.g. A(a, a) ~ B => A(a, b) ~ B, a ~ TMP(b)
-          // E.g. A(a) ~ B(a) => A(a) ~ B(b), a ~ TMP(b)
+          // Create intermediary node that will be removed after rewrite. It temporarily converts
+          // the problematic self-link of the active pair into a link to another node,
+          // which allows us to rewrite the active pair by assuming there are no self-links.
+          // We link port 0 of TMP to src and port 1 of TMP to dst, to split the shared wire.
           let intermediary = self.new_node(INTERMEDIARY_AGENT_ID, 2);
           let src = port(node_idx, port_idx);
           self.link(src, port(intermediary, 0));
@@ -190,7 +200,11 @@ impl INet {
       }
     }
 
+    // Apply rewrite rule to active pair if there is a matching rule
     let rule_application_result = rule_book.apply(self, (a, b));
+
+    // Now that the rewrite is done (or no rewrite happened if there was no applicable rule),
+    // we can remove the intermediary nodes and link their two wires together into one again.
     for node_idx in intermediary_nodes {
       let node = &self[node_idx];
       let src = node[0];
@@ -198,19 +212,19 @@ impl INet {
       self.link(src, dst);
       self.free_node(node_idx);
     }
+
     let new_active_pairs = if let Some(created_nodes) = rule_application_result {
+      // Remove the nodes of the active pair that was rewritten
       self.free_node(a);
       self.free_node(b);
 
-      // Add nodes created by rewrite as candidates for active pairs
+      // Add nodes created by rewrite as candidates for new active pairs
       // There are no duplicates in this chained iter, because these sets are disjoint
-      // let created_nodes = dbg!(created_nodes);
       let active_pair_candidate_nodes = active_pair_candidate_nodes.into_iter().chain(created_nodes);
 
       // Check which of the candidates actually form active pairs.
       // Sort each pair of node indices so that we can dedup them.
       // Sort the list of pairs so that we can dedup them.
-      // TODO: Optimize, don't allocate memory
       let new_active_pairs = active_pair_candidate_nodes
         .filter_map(|node_idx| {
           debug_assert!(self[node_idx].used, "Node {node_idx} is not used: {:#?}", self[node_idx]);
@@ -270,10 +284,7 @@ impl INet {
 
   /// Read back reduced net into textual form
   pub fn read_back(&self) -> Vec<Connection> {
-    let mut connections = vec![];
-
-    let mut node_idx_to_agent_port_names = HashMap::<NodeIdx, Vec<PortName>>::new();
-
+    // Helper function to generate new unique port names
     let mut new_port_name = {
       let mut next_port_idx = 0;
       move || {
@@ -283,6 +294,13 @@ impl INet {
       }
     };
 
+    // We use this to keep track of the names we give to agent aux ports
+    let mut nodes_aux_port_names = HashMap::<NodeIdx, Vec<PortName>>::new();
+
+    // Keep track of connections between ports
+    let mut connections = vec![];
+
+    // Iterate over all active links
     for (node_idx, node) in self.nodes.iter().enumerate() {
       if !node.used {
         continue;
@@ -291,28 +309,44 @@ impl INet {
       for port_idx in 0 .. node.ports.len() {
         let src = port(node_idx, port_idx);
         let dst = self[src];
+
+        // Only process each bidirectional link once, to prevent duplicates
         if src < dst {
-          let mut connector = |node_port: NodePort| {
-            let node = &self[node_port.node_idx];
-            let agent_port_names = node_idx_to_agent_port_names
+          /// Build a `Connector` from a port. If the port is a principal port, the connector is an `Agent`.
+          /// If the port is an aux port, the connector is a `Port`.
+          fn build_connector_from_port(
+            net: &INet,
+            node_idx_to_agent_port_names: &mut HashMap<NodeIdx, Vec<PortName>>,
+            mut new_port_name: impl FnMut() -> String,
+            node_port: NodePort,
+          ) -> Connector {
+            let node = &net[node_port.node_idx];
+            // Whenever we encounter a node we haven't seen before, we generate new unique aux port names for it.
+            // When we encounter the same node again, we read the previously generated aux port names.
+            // This ensures that all references to the same node use the same aux port names.
+            let agent_aux_port_names = node_idx_to_agent_port_names
               .entry(node_port.node_idx)
-              .or_insert_with(|| (0 .. node.ports.len() - 1).map(|_| new_port_name()).collect());
+              .or_insert_with(|| (1 .. node.ports.len()).map(|_| new_port_name()).collect());
+
             if node_port.port_idx == 0 {
+              // Connected to a principal port, either `x ~ root` or `x ~ Agent(...)`
               if node_port.node_idx == ROOT_NODE_IDX {
                 Connector::Port(ROOT_PORT_NAME.to_string())
               } else {
                 Connector::Agent(Agent {
-                  agent: node.agent_name.clone(), // TODO: Map agent_id to agent_name
-                  ports: agent_port_names.clone(),
+                  agent: node.agent_name.clone(),
+                  ports: agent_aux_port_names.clone(),
                 })
               }
             } else {
-              Connector::Port(agent_port_names[node_port.port_idx - 1].clone())
+              // Connected to auxiliary port of agent: `x ~ aux, Agent(..., aux, ...) ~ y`
+              Connector::Port(agent_aux_port_names[node_port.port_idx - 1].clone())
             }
-          };
+          }
 
-          let src = connector(src);
-          let dst = connector(dst);
+          // For each link, we create a `Connection`: src ~ dst
+          let src = build_connector_from_port(self, &mut nodes_aux_port_names, &mut new_port_name, src);
+          let dst = build_connector_from_port(self, &mut nodes_aux_port_names, &mut new_port_name, dst);
           connections.push(Connection::new(src, dst));
         }
       }
@@ -321,9 +355,9 @@ impl INet {
   }
 
   /// Add a `Connector` to the net
-  /// Returns Ok(port) if it was added (agent) or linked (via lookup in `ports_to_link`)
-  /// Modifies `ports_to_link` such that looked up (found & linked) ports are removed and
-  /// auxiliary ports of newly added agents are inserted, so that future lookups can find them.
+  /// If the connector is a port, `Err(port_name)` is returned so that it can be linked later.
+  /// If the connector is an agent, it is added as a new node and its principal port is returned as `Ok(port)`.
+  /// Connections to auxiliary ports are added to `deferred_port_links` so that they can be linked later.
   fn add_connector<'a, 'b: 'a>(
     &mut self,
     connector: &'b Connector,
@@ -333,7 +367,7 @@ impl INet {
   ) -> MaybeLinkedPort<'b> {
     match connector {
       Connector::Agent(agent) => {
-        // Insert agent node
+        // Create agent node
         let agent_name = agent.agent.clone();
         let Agent { agent, ports } = agent;
         let agent_id = agent_name_to_id[agent];
@@ -358,15 +392,24 @@ impl INet {
     }
   }
 
-  /// Add connections to the net, either when creating a net from scratch or inserting a sub-net during a rewrite
-  /// `external_ports` is a map from port names to ports in the parent net
-  /// When creating a net from scratch, `external_ports` only contains the root port
+  /// Add connections to the net, either when creating a net from scratch or inserting a sub-net
+  /// during a rewrite. `external_ports` is a map from port names to ports in the parent net.
+  /// When creating a net from scratch, `external_ports` only contains the `root` port.
+  /// When called by `RuleBook::apply`, `external_ports` contains the ports of the parent net that
+  /// the rule's RHS sub-net is connected to, based on which INet ports the rule's LHS (active pair)
+  /// aux port names map to, in that context of the local rewrite.
   pub fn add_connections<'a>(
     &mut self,
     connections: &'a [Connection],
     external_ports: MaybeLinkedPorts<'a>,
     agent_name_to_id: &HashMap<AgentName, AgentId>,
   ) -> CreatedNodes {
+    /// Follow connections to find the target of a `port_name` that it resolves to.
+    /// Returns `Ok(port)` if the target port could be found, `Err(port_name)` otherwise.
+    /// Connections are removed (consumed) from `deferred_port_links` as they are followed.
+    /// E.g. if `deferred_port_links` is `[Err("x") ~ Err("y"), Err("y") ~ port]` and `port_name` is "x",
+    /// `Ok(port)` is returned and `deferred_port_links` is updated to `[]` as the followed links were consumed.
+    /// As long as `deferred_port_links` is not empty, there are still unresolved ports to be linked.
     fn port_target<'a, 'b: 'a>(
       deferred_port_links: &'a mut MaybeLinkedPorts<'b>,
       port_name: PortNameRef<'b>,
@@ -387,22 +430,14 @@ impl INet {
         target = connector;
         if target.is_ok() {
           break;
-          // If the connector is a port name, follow the connection further
+          // If the connector is `Err(port_name)`, continue looking up further
         }
       }
       target
     }
 
     // We keep track of connections that are not linked together yet, as unordered pairs of ports.
-    // Unlinked ports are represented by Err(name), linked ports by Ok(port)
-    // E.g. when this function is called with [ A(a, a) ~ b, b ~ C(root) ],
-    // `deferred_port_links` will contain [(Ok(A.ports[0]), Err("b")), (Err("b"), Ok(C.ports[0]))]
-    // What happens with A.ports[1] and A.ports[2]:
-    // During the call of `add_connector` for A, A.ports[1] is inserted into `ports_to_link` and
-    // when processing A.ports[2], it will find ("a", A.ports[1]) in `ports_to_link`, remove it
-    // and link A.ports[1] to A.ports[2].
-    // During the call of `add_connector` for C, when processing C.ports[1], it will find ("root", (0, 0))
-    // in `ports_to_link`, remove it and link (0, 0) to C.ports[1].
+    // Unlinked ports are represented by Err(name), linked ports by Ok(port).
     // We pre-populate `deferred_port_links` with `external_ports`:
     let mut deferred_port_links = external_ports;
 
@@ -451,8 +486,6 @@ type MaybeLinkedPorts<'a> = Vec<[MaybeLinkedPort<'a>; 2]>;
 type ActivePairs = Vec<(NodeIdx, NodeIdx)>;
 
 // Indexing utils to allow indexing an INet with a NodeIdx and NodePort
-
-use std::ops::{Index, IndexMut};
 
 impl Index<NodeIdx> for INet {
   type Output = Node;

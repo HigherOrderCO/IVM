@@ -114,7 +114,6 @@ impl Ast {
         }
       });
 
-    // TODO: For showing better errors to user, allow parsing repeated `init` statements and reject during validation
     let init = just(Token::KeywordInit).ignore_then(connections);
 
     let definition = agent_def.or(rule_def);

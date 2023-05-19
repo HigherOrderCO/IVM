@@ -4,7 +4,7 @@ use crate::{
   rule_book::RuleBook,
 };
 
-/// INet program contains all context necessary to reduce the net
+/// `INetProgram` contains all context necessary to reduce the net
 pub struct INetProgram {
   pub ast: Ast, // Not necessary for reduction, but useful for debugging
   pub net: INet,

@@ -22,7 +22,7 @@ type RuleLhs = (AgentId, AgentId);
 struct RuleRhs {
   rule_src: String, // Rule's source code, used for showing in error messages
   port_idx_to_name: [Vec<PortName>; 2],
-  connections: Vec<Connection>, // TODO: Use agent/port id in connections
+  connections: Vec<Connection>,
 }
 
 /**
@@ -37,7 +37,7 @@ Currently the ports are linked by name, but this could be changed to use port id
 */
 #[derive(new)]
 pub struct RuleBook {
-  pub agent_name_to_id: HashMap<AgentName, AgentId>, // TODO: read-only getter
+  pub agent_name_to_id: HashMap<AgentName, AgentId>,
   #[new(default)]
   rules: HashMap<RuleLhs, RuleRhs>,
 }
@@ -82,14 +82,10 @@ impl RuleBook {
     let key = (lhs_id, rhs_id); // Ordered pair
 
     if let Some(RuleRhs { rule_src, port_idx_to_name, connections }) = self.rules.get(&key) {
-      // eprintln!("Applying rule for active pair `{active_pair:?}`: {rule}");
-
-      // Build external_links map from port name to NodePort in this net
-      // based on all auxiliary ports in the active pair, e.g. if the rule RHS
-      // is Add(ret, a) ~ Succ(b), the ports {ret, a, b} will be mapped, then
-      // INet::add_connections looks up ports when adding the connections of the RHS sub-net
-
-      // TODO: Optimize, don't do port lookup by name, and don't allocate a HashMap every time
+      // Build `external_links` (pairs of port name and NodePort)
+      // based on all auxiliary ports in the active pair, e.g. if the rule LHS
+      // is Add(ret, a) ~ Succ(b), the ports {ret, a, b} are external links, then
+      // `INet::add_connections` looks up ports when adding the connections of the RHS sub-net
       let external_links = [lhs_node, rhs_node]
         .into_iter()
         .zip(port_idx_to_name)
@@ -100,7 +96,7 @@ impl RuleBook {
             "\n{net:#?}\n{rule_src}\n{node:?}, {port_idx_to_name:?}"
           );
 
-          // Skip principal port, we only have names for auxiliary ports
+          // Skip principal port, only auxiliary ports have names
           node
             .ports
             .iter()

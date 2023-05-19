@@ -17,7 +17,7 @@ rule Dup(a, b) ~ Succ(p) = a ~ Succ(a2), b ~ Succ(b2), Dup(a2, b2) ~ p
 
 agent Mul(a, b)
 rule Mul(ret, a) ~ Zero = ret ~ Zero, a ~ Era
-rule Mul(ret, a) ~ Succ(b) = Dup(a2, a3) ~ a, Add(ret, cnt) ~ a2, Mul(cnt, a3) ~ b
+rule Mul(ret, a) ~ Succ(b) = Dup(a2, a3) ~ a, Add(ret, a2) ~ cnt, Mul(cnt, a3) ~ b
 
 agent T
 agent F

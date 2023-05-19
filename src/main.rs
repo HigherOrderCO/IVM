@@ -1,6 +1,6 @@
 use color_eyre::eyre::Result;
 use ivm::parser::ast::Ast;
-use std::{env, fs};
+use std::{env, fs, time::Instant};
 
 fn main() -> Result<()> {
   if env::var("RUST_LIB_BACKTRACE").is_err() {
@@ -28,7 +28,10 @@ fn main() -> Result<()> {
     reduction_count += 1;
   } */
 
+  let time = Instant::now();
   let reduction_count = program.reduce();
-  println!("[{reduction_count}] {}", program.read_back());
+  let elapsed_s = time.elapsed().as_secs_f64();
+  let rps = reduction_count as f64 / elapsed_s;
+  println!("[{reduction_count} R][{elapsed_s:.3} s][{rps:.3} RPS]\n{}", program.read_back());
   Ok(())
 }

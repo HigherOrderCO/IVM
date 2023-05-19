@@ -74,14 +74,17 @@ pub fn unflatten_connections(connections: Vec<Connection>) -> Vec<NestedConnecti
   let mut connections = connections
     .into_iter()
     .map(|connection| {
+      fn unflatten_connector(connector: Connector) -> NestedConnector {
+        match connector {
+          Connector::Agent(Agent { agent, ports }) => NestedConnector::Agent(NestedAgent {
+            agent,
+            ports: ports.into_iter().map(|port| NestedConnector::Port(port)).collect(),
+          }),
+          Connector::Port(port) => NestedConnector::Port(port),
+        }
+      }
+
       let Connection { lhs, rhs } = connection;
-      let unflatten_connector = |connector| match connector {
-        Connector::Agent(Agent { agent, ports }) => NestedConnector::Agent(NestedAgent {
-          agent,
-          ports: ports.into_iter().map(|port| NestedConnector::Port(port)).collect(),
-        }),
-        Connector::Port(port) => NestedConnector::Port(port),
-      };
       let lhs = unflatten_connector(lhs);
       let rhs = unflatten_connector(rhs);
       NestedConnection { lhs, rhs }
