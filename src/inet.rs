@@ -7,6 +7,7 @@ use crate::{
 };
 use hashbrown::HashMap;
 use itertools::Itertools;
+use smallvec::SmallVec;
 use std::{
   collections::VecDeque,
   fmt,
@@ -16,6 +17,8 @@ use std::{
 
 pub type NodeIdx = usize;
 pub type PortIdx = usize;
+
+type PortVec = SmallVec<[NodePort; 4]>; // SmallVec to avoid heap allocation for small port counts
 
 /// A node in the INet
 #[derive(Debug, Clone, Default)]
@@ -27,7 +30,7 @@ pub struct Node {
   pub agent_id: AgentId,
 
   /// 0: principal port
-  pub ports: Vec<NodePort>,
+  pub ports: PortVec,
 
   pub agent_name: AgentName,
 }
@@ -73,7 +76,7 @@ impl INet {
     let node = &mut self[node_idx];
     node.used = true;
     node.agent_id = agent_id;
-    node.ports = vec![Default::default(); port_count];
+    node.ports = vec![Default::default(); port_count].into();
     node_idx
   }
 
@@ -107,7 +110,7 @@ impl INet {
           assert!(self[dst.node_idx].used, "\nUsed node linked to unused node {:?}:\n{self:#?}", (src, dst));
         }
       } else {
-        assert_eq!(node.ports, vec![]);
+        assert_eq!(node.ports, PortVec::default());
         assert!(self.free_nodes.contains(&node_idx), "\n{self:#?}");
       }
     }
