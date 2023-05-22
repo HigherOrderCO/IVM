@@ -194,7 +194,10 @@ impl RuleBook {
           node.ports.iter().skip(1).copied()
         })
         .collect_vec();
-      Some(net.insert_rule_rhs_subnet(subnet, &external_ports))
+      eprintln!("before: {net:#?}");
+      let created_nodes = net.insert_rule_rhs_subnet(subnet, &external_ports);
+      panic!("after: {net:#?}\ncreated_nodes: {created_nodes:#?}");
+      Some(created_nodes)
     } else {
       None
     }

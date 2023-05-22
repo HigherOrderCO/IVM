@@ -87,7 +87,11 @@ impl INet {
 
   /// Make node available for reuse
   pub fn free_node(&mut self, node_idx: NodeIdx) {
-    self[node_idx] = Default::default(); // TODO: Optimize mem allocs, clear instead of overwrite
+    // self[node_idx] = Default::default(); // TODO: Optimize mem allocs, clear instead of overwrite
+    let node = &mut self[node_idx];
+    node.used = false;
+    node.ports.clear();
+
     self.free_nodes.push(node_idx);
   }
 
@@ -290,10 +294,10 @@ impl INet {
     // TODO: Use reuseable Vec, since subnet indices start at 0
     // Copy all fields other than `ports` from `subnet` to `self` and keep track of new node indices
     // Skip boundary node
-    let subnet_node_idx_to_self_node_idx = subnet
+    let mut subnet_node_idx_to_self_node_idx = subnet
       .nodes
       .iter()
-      .skip(1)
+      // .skip(1)
       .map(|node| {
         debug_assert!(node.used); // Rule RHS subnets should have all unused nodes removed
 
@@ -307,12 +311,14 @@ impl INet {
 
     // Copy mapped ports using new node indices
     // Skip boundary node
-    for (subnet_node, self_node_idx) in subnet.nodes.iter().skip(1).zip(&subnet_node_idx_to_self_node_idx) {
+    for (subnet_node, self_node_idx) in
+      subnet.nodes.iter()/* .skip(1) */.zip(&subnet_node_idx_to_self_node_idx)
+    {
       // TODO: get_unchecked_mut
       let self_node = &mut self[*self_node_idx];
       for (subnet_port, self_port) in subnet_node.ports.iter().zip(self_node.ports.iter_mut()) {
         let NodePort { node_idx: subnet_node_idx, port_idx } = *subnet_port;
-        /* *self_port = if subnet_node_idx == BOUNDARY_NODE_IDX {
+        *self_port = if subnet_node_idx == BOUNDARY_NODE_IDX {
           // Map `port_idx` to external port in `self`
           // TODO: get_unchecked
           external_ports[port_idx]
@@ -321,17 +327,28 @@ impl INet {
           // Map `node_idx` from `subnet` to `self`
           // TODO: get_unchecked
           NodePort { node_idx: subnet_node_idx_to_self_node_idx[subnet_node_idx], port_idx }
-        }; */
-        *self_port = NodePort { node_idx: subnet_node_idx_to_self_node_idx[subnet_node_idx - 1], port_idx };
+        };
+        // *self_port = NodePort { node_idx: subnet_node_idx_to_self_node_idx[subnet_node_idx - 1], port_idx };
       }
     }
-
-    let boundary_node = &subnet.nodes[BOUNDARY_NODE_IDX];
+    /* let boundary_node = &subnet.nodes[BOUNDARY_NODE_IDX];
     debug_assert_eq!(boundary_node.agent_id, BOUNDARY_AGENT_ID);
     debug_assert_eq!(boundary_node.ports.len(), external_ports.len());
-    let src = boundary_node[0];
+    let src = boundary_node[0]; // TODO: Map node_idx if it's BOUNDARY_NODE_IDX
     let dst = boundary_node[1];
     self.link(src, dst);
+    self.free_node(node_idx); */
+
+    // Pass-through link boundary node and then remove it, similar to intermediary nodes in `rewrite`
+    let node_idx = subnet_node_idx_to_self_node_idx[BOUNDARY_NODE_IDX];
+    let node: &Node = &self[node_idx];
+    debug_assert_eq!(node.agent_id, BOUNDARY_AGENT_ID);
+    debug_assert_eq!(node.ports.len(), external_ports.len());
+    let src = node[0];
+    let dst = node[1];
+    self.link(src, dst);
+    self.free_node(node_idx);
+    subnet_node_idx_to_self_node_idx.swap_remove(BOUNDARY_NODE_IDX);
 
     subnet_node_idx_to_self_node_idx
   }
@@ -423,14 +440,23 @@ impl INet {
     const INTERMEDIARY_AGENT_ID: AgentId = usize::MAX;
     let mut intermediary_nodes = vec![];
     for node_idx in [a, b] {
-      for port_idx in 0 .. self[node_idx].ports.len() {
-        let dst = self[node_idx][port_idx];
+      // for port_idx in 0 .. self[node_idx].ports.len() {
+      // Skip principal port
+      for port_idx in 1 .. self[node_idx].ports.len() {
+        let src = port(node_idx, port_idx);
+        let dst = self[src];
         if dst.node_idx == a || dst.node_idx == b {
+          /* debug_assert_ne!(
+            dst.port_idx, 0,
+            "Principal port of active pair member cannot be linked to aux port"
+          ); */
+
           // Create intermediary node that will be removed after rewrite. It temporarily converts
           // the problematic self-link of the active pair into a link to another node,
           // which allows us to rewrite the active pair by assuming there are no self-links.
           // We link port 0 of TMP to src and port 1 of TMP to dst, to split the shared wire.
           let intermediary = self.new_node(INTERMEDIARY_AGENT_ID, 2);
+          self[intermediary].agent_name = format!("TMP: {src} ~ {dst}");
           let src = port(node_idx, port_idx);
           self.link(src, port(intermediary, 0));
           self.link(dst, port(intermediary, 1));
