@@ -2,7 +2,7 @@ use crate::{
   parser::ast::{
     Agent, AgentName, Connection, Connector, PortName, PortNameRef, ROOT_NODE_IDX, ROOT_PORT_NAME,
   },
-  rule_book::{AgentId, RuleBook, EXTERNAL_NODE_IDX},
+  rule_book::{AgentId, RuleBook, BOUNDARY_AGENT_ID, BOUNDARY_NODE_IDX},
   util::sort_tuple,
 };
 use hashbrown::HashMap;
@@ -93,36 +93,47 @@ impl INet {
 
   /// Mutually link ports
   pub fn link(&mut self, a: NodePort, b: NodePort) {
-    if a.node_idx != EXTERNAL_NODE_IDX && b.node_idx != EXTERNAL_NODE_IDX {
-      self[a] = b;
-      self[b] = a;
-    }
+    // if a.node_idx != BOUNDARY_NODE_IDX && b.node_idx != BOUNDARY_NODE_IDX {
+    self[a] = b;
+    self[b] = a;
+    // }
   }
 
-  /// Like `link`, except it doesn't link to external nodes.
+  /* /// Like `link`, except it doesn't link to external nodes.
   /// Returns true if the link was successful, false otherwise
   pub fn link_external(&mut self, a: NodePort, b: NodePort) {
-    if a.node_idx != EXTERNAL_NODE_IDX {
+    if a.node_idx != BOUNDARY_NODE_IDX {
       self[a] = b;
     }
-    if b.node_idx != EXTERNAL_NODE_IDX {
+    if b.node_idx != BOUNDARY_NODE_IDX {
       self[b] = a;
     }
-  }
+  } */
 
   /// Validate the inet, panics if invalid, useful for debugging/tests
   /// If an INet generated from a valid AST fails validation, it'd be a bug
   pub fn validate(&self) {
+    println!("validate: {self:#?}");
     let mut used_node_count = 0;
+    let mut contains_boundary_node = false;
     for (node_idx, node) in self.nodes.iter().enumerate() {
       if node.used {
         used_node_count += 1;
 
-        assert_ne!(node.ports.len(), 0, "Nodes must have at least one port:\n{node:#?}");
+        let is_boundary_node = node_idx == BOUNDARY_NODE_IDX;
+        if is_boundary_node {
+          contains_boundary_node = true;
+        }
+
+        if !is_boundary_node {
+          assert_ne!(node.ports.len(), 0, "Nodes must have at least one port:\n{node:#?}");
+        }
+
         for port_idx in 0 .. node.ports.len() {
           let src = port(node_idx, port_idx);
           let dst = self[src];
 
+          println!("{src:?} ~ {dst:?}");
           assert_eq!(self[dst], src, "\nNon-bidirectional link {:?}:\n{self:#?}", (src, dst));
 
           assert!(self[dst.node_idx].used, "\nUsed node linked to unused node {:?}:\n{self:#?}", (src, dst));
@@ -132,7 +143,9 @@ impl INet {
         assert!(self.free_nodes.contains(&node_idx), "\n{self:#?}");
       }
     }
-    assert!(used_node_count >= 2, "Interaction net has {used_node_count} < 2 nodes:\n{self:#?}");
+    if !contains_boundary_node {
+      assert!(used_node_count >= 2, "Interaction net has {used_node_count} < 2 nodes:\n{self:#?}");
+    }
   }
 
   /// Add a `Connector` to the net, only called by `INet::add_connections`.
@@ -240,8 +253,9 @@ impl INet {
       match (lhs, rhs) {
         (Ok(lhs), Ok(rhs)) => {
           // Both connectors are resolved to ports, thus ready to be linked
-          self.link_external(lhs, rhs);
-          eprintln!("Linked {lhs} ~ {rhs}");
+          // self.link_external(lhs, rhs);
+          self.link(lhs, rhs);
+          eprintln!("Linked {lhs} ~ {rhs}\n{self:#?}");
         }
         (Ok(node_port), Err(port_name)) | (Err(port_name), Ok(node_port)) => {
           // Look up the connection target of `port_name` and queue the connection for later linking
@@ -275,9 +289,11 @@ impl INet {
   pub fn insert_rule_rhs_subnet(&mut self, subnet: &INet, external_ports: &[NodePort]) -> CreatedNodes {
     // TODO: Use reuseable Vec, since subnet indices start at 0
     // Copy all fields other than `ports` from `subnet` to `self` and keep track of new node indices
+    // Skip boundary node
     let subnet_node_idx_to_self_node_idx = subnet
       .nodes
       .iter()
+      .skip(1)
       .map(|node| {
         debug_assert!(node.used); // Rule RHS subnets should have all unused nodes removed
 
@@ -290,12 +306,13 @@ impl INet {
       .collect_vec();
 
     // Copy mapped ports using new node indices
-    for (subnet_node, self_node_idx) in subnet.nodes.iter().zip(&subnet_node_idx_to_self_node_idx) {
+    // Skip boundary node
+    for (subnet_node, self_node_idx) in subnet.nodes.iter().skip(1).zip(&subnet_node_idx_to_self_node_idx) {
       // TODO: get_unchecked_mut
       let self_node = &mut self[*self_node_idx];
       for (subnet_port, self_port) in subnet_node.ports.iter().zip(self_node.ports.iter_mut()) {
         let NodePort { node_idx: subnet_node_idx, port_idx } = *subnet_port;
-        *self_port = if subnet_node_idx == EXTERNAL_NODE_IDX {
+        /* *self_port = if subnet_node_idx == BOUNDARY_NODE_IDX {
           // Map `port_idx` to external port in `self`
           // TODO: get_unchecked
           external_ports[port_idx]
@@ -304,9 +321,17 @@ impl INet {
           // Map `node_idx` from `subnet` to `self`
           // TODO: get_unchecked
           NodePort { node_idx: subnet_node_idx_to_self_node_idx[subnet_node_idx], port_idx }
-        };
+        }; */
+        *self_port = NodePort { node_idx: subnet_node_idx_to_self_node_idx[subnet_node_idx - 1], port_idx };
       }
     }
+
+    let boundary_node = &subnet.nodes[BOUNDARY_NODE_IDX];
+    debug_assert_eq!(boundary_node.agent_id, BOUNDARY_AGENT_ID);
+    debug_assert_eq!(boundary_node.ports.len(), external_ports.len());
+    let src = boundary_node[0];
+    let dst = boundary_node[1];
+    self.link(src, dst);
 
     subnet_node_idx_to_self_node_idx
   }

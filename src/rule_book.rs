@@ -11,7 +11,8 @@ use itertools::Itertools;
 
 /// `NodeIdx` that ports in the rule's RHS sub-net use, to refer to the active pair
 /// Also see `INet::insert_rule_rhs_sub_net`
-pub const EXTERNAL_NODE_IDX: NodeIdx = NodeIdx::MAX;
+pub const BOUNDARY_NODE_IDX: NodeIdx = 0;
+pub const BOUNDARY_AGENT_ID: AgentId = usize::MAX - 1;
 
 /// Agent IDs start from 1, 0 is reserved for the root node's agent_id
 pub type AgentId = usize;
@@ -117,16 +118,29 @@ impl RuleBook {
           .map(|(external_port_idx, port_name)| {
             [
               Err(port_name.as_str()),
-              Ok(NodePort { node_idx: EXTERNAL_NODE_IDX, port_idx: external_port_idx }),
+              Ok(NodePort { node_idx: BOUNDARY_NODE_IDX, port_idx: external_port_idx }),
             ]
           })
-          .collect();
+          .collect_vec();
 
         let mut net = INet::default();
+
+        // Create external boundary node with as many ports
+        // as there are external ports in the rule's RHS sub-net
+        // (== the sum of the aux ports in the active pair)
+        let boundary_node_idx = net.new_node(BOUNDARY_AGENT_ID, external_ports.len());
+        debug_assert_eq!(boundary_node_idx, BOUNDARY_NODE_IDX);
+        net[boundary_node_idx].agent_name = rule_src.to_owned(); // TODO: Use only active pair
+        net[boundary_node_idx].ports = (0 .. external_ports.len())
+          .map(|port_idx| NodePort { node_idx: BOUNDARY_NODE_IDX, port_idx })
+          .collect_vec()
+          .into();
+
         let _created_nodes = net.add_connections(rule_rhs, external_ports, &self.agent_name_to_id);
         if cfg!(debug_assertions) {
           net.validate();
         }
+        // panic!("{net:#?}");
         net
       },
       // port_idx_to_name,

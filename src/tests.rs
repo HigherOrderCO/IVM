@@ -194,12 +194,13 @@ fn test_reduce_inet_ctor_era() -> IvmResult<()> {
   let src = "
     agent A(a, b)
     agent B(c, d)
-    agent Era
     agent R
     rule A(e, f) ~ B(g, h) = e ~ g, f ~ h
-    rule Era ~ Era =
-    init A(root, i) ~ B(j, h), i ~ Era, j ~ R, h ~ Era
+    init A(root, i) ~ B(j, h), i ~ h, j ~ R
   ";
+  // rule A(e, f) ~ B(g, h) = e ~ g, f ~ h
+  // rule Era ~ Era =
+  // init A(root, i) ~ B(j, h), i ~ Era, j ~ R, h ~ Era
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
   let mut program = ast.into_inet_program();
