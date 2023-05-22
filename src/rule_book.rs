@@ -19,6 +19,7 @@ pub const ROOT_AGENT_ID: AgentId = 0;
 /// So that we only have to store one mapping to cover A ~ B and B ~ A
 type RuleLhs = (AgentId, AgentId);
 
+#[derive(Clone)]
 struct RuleRhs {
   rule_src: String, // Rule's source code, used for showing in error messages
   port_idx_to_name: [Vec<PortName>; 2],
@@ -35,7 +36,7 @@ During rule application, the rule RHS sub-net is constructed and external links
 are connected to the corresponding ports in the active pair of the net.
 Currently the ports are linked by name, but this could be changed to use port ids.
 */
-#[derive(new)]
+#[derive(new, Clone)]
 pub struct RuleBook {
   pub agent_name_to_id: HashMap<AgentName, AgentId>,
   #[new(default)]
