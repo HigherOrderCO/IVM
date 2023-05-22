@@ -12,13 +12,13 @@ fn test_lexer() {
   use Token::*;
 
   assert_eq!(Token::lexer(
-		"//
-		agent rule init()/**/,=~/*:<-_*/ /* loads and loads of senseless drivel /* --ahem, useful documentation */ featuring nested comments */
-		// single line comment"
-	).collect::<Vec<_>>(),
-	vec![
-		KeywordAgent, KeywordRule, KeywordInit, LParen, RParen, Comma, Equals, Tilde,
-	]);
+    "//
+    agent rule init()/**/,=~/*:<-_*/ /* loads and loads of senseless drivel /* --ahem, useful documentation */ featuring nested comments */
+    // single line comment"
+  ).collect::<Vec<_>>(),
+  vec![
+    KeywordAgent, KeywordRule, KeywordInit, LParen, RParen, Comma, Equals, Tilde,
+  ]);
 }
 
 #[test]
@@ -26,14 +26,14 @@ fn test_parser() -> IvmResult<()> {
   assert_eq!(
     Ast::parse(
       "
-		// Nat
-		agent Zero
-		agent Succ(pred)
-		rule Succ(ret) ~ Zero = ret ~ Succ(Zero)
-		rule Succ(ret) ~ Succ(p) = ret ~ Succ(Succ(p))
+    // Nat
+    agent Zero
+    agent Succ(pred)
+    rule Succ(ret) ~ Zero = ret ~ Succ(Zero)
+    rule Succ(ret) ~ Succ(p) = ret ~ Succ(Succ(p))
 
-		init root ~ Succ(Succ(Zero))
-		"
+    init root ~ Succ(Succ(Zero))
+    "
     )?,
     Ast {
       agents: vec![
@@ -145,16 +145,16 @@ fn test_to_inet() -> IvmResult<()> {
 #[test]
 fn test_reduce_inet() -> IvmResult<()> {
   let src = "
-		agent Zero()
-		agent Succ(pred)
-		rule Succ(ret) ~ Zero = ret ~ Succ(Zero)
-		rule Succ(ret) ~ Succ(p) = ret ~ Succ(Succ(p))
+    agent Zero()
+    agent Succ(pred)
+    rule Succ(ret) ~ Zero = ret ~ Succ(Zero)
+    rule Succ(ret) ~ Succ(p) = ret ~ Succ(Succ(p))
 
-		agent Add(a, b)
-		rule Add(ret, a) ~ Zero = ret ~ a
-		rule Add(ret, a) ~ Succ(b) = ret ~ Succ(cnt), Add(cnt, a) ~ b
+    agent Add(a, b)
+    rule Add(ret, a) ~ Zero = ret ~ a
+    rule Add(ret, a) ~ Succ(b) = ret ~ Succ(cnt), Add(cnt, a) ~ b
 
-		init Add(root, Zero) ~ Zero
+    init Add(root, Zero) ~ Zero
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
@@ -172,10 +172,10 @@ fn test_reduce_inet() -> IvmResult<()> {
 #[test]
 fn test_reduce_inet_basic() -> IvmResult<()> {
   let src = "
-		agent A(a)
-		agent B
-		rule A(a) ~ B = a ~ B
-		init A(root) ~ B
+    agent A(a)
+    agent B
+    rule A(a) ~ B = a ~ B
+    init A(root) ~ B
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
@@ -192,12 +192,13 @@ fn test_reduce_inet_basic() -> IvmResult<()> {
 #[test]
 fn test_reduce_inet_ctor_era() -> IvmResult<()> {
   let src = "
-		agent A(a, b)
-		agent B(c, d)
-		agent Era
-		rule A(e, f) ~ B(g, h) = e ~ g, f ~ h
-		rule Era ~ Era =
-		init A(root, i) ~ B(j, h), i ~ Era, j ~ Era, h ~ Era
+    agent A(a, b)
+    agent B(c, d)
+    agent Era
+    agent R
+    rule A(e, f) ~ B(g, h) = e ~ g, f ~ h
+    rule Era ~ Era =
+    init A(root, i) ~ B(j, h), i ~ Era, j ~ R, h ~ Era
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
@@ -210,14 +211,17 @@ fn test_reduce_inet_ctor_era() -> IvmResult<()> {
   eprintln!("{:#?}", program.net);
   eprintln!("program.net.active_pairs(): {:#?}", program.net.scan_active_pairs());
   assert_eq!(program.net.scan_active_pairs(), vec![(0, 4)], "{}\n{:#?}", program.ast, program.net);
+  program.reduce();
+  let result = program.read_back();
+  assert_eq!(result, "root ~ R");
   Ok(())
 }
 
 #[test]
 fn test_reduce_inet_link_self_principal() -> IvmResult<()> {
   let src = "
-		agent A(a, b)
-		init A(root, i) ~ i
+    agent A(a, b)
+    init A(root, i) ~ i
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
@@ -231,10 +235,10 @@ fn test_reduce_inet_link_self_principal() -> IvmResult<()> {
 #[test]
 fn test_reduce_inet_link_self_aux() -> IvmResult<()> {
   let src = "
-		agent A(a, b)
-		agent E
-		rule A(e, f) ~ A(g, h) = e ~ g, f ~ h
-		init A(root, i) ~ A(j, j), i ~ E
+    agent A(a, b)
+    agent E
+    rule A(e, f) ~ A(g, h) = e ~ g, f ~ h
+    init A(root, i) ~ A(j, j), i ~ E
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
@@ -249,10 +253,10 @@ fn test_reduce_inet_link_self_aux() -> IvmResult<()> {
 #[test]
 fn test_reduce_inet_link_self_double() -> IvmResult<()> {
   let src = "
-		agent A(a, b)
-		agent E
-		rule A(e, f) ~ A(g, h) = e ~ g, f ~ h
-		init A(a, a) ~ A(b, b), root ~ E
+    agent A(a, b)
+    agent E
+    rule A(e, f) ~ A(g, h) = e ~ g, f ~ h
+    init A(a, a) ~ A(b, b), root ~ E
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
@@ -268,10 +272,10 @@ fn test_reduce_inet_link_self_double() -> IvmResult<()> {
 #[test]
 fn test_reduce_inet_link_pair_single() -> IvmResult<()> {
   let src = "
-		agent A(a, b)
-		agent E
-		rule A(e, f) ~ A(g, h) = e ~ g, f ~ h
-		init A(root, j) ~ A(j, i), i ~ E
+    agent A(a, b)
+    agent E
+    rule A(e, f) ~ A(g, h) = e ~ g, f ~ h
+    init A(root, j) ~ A(j, i), i ~ E
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
@@ -286,10 +290,10 @@ fn test_reduce_inet_link_pair_single() -> IvmResult<()> {
 #[test]
 fn test_reduce_inet_link_pair_double() -> IvmResult<()> {
   let src = "
-		agent A(a, b)
-		agent E
-		rule A(e, f) ~ A(g, h) = e ~ g, f ~ h
-		init A(a, b) ~ A(a, b), root ~ E
+    agent A(a, b)
+    agent E
+    rule A(e, f) ~ A(g, h) = e ~ g, f ~ h
+    init A(a, b) ~ A(a, b), root ~ E
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
@@ -304,8 +308,8 @@ fn test_reduce_inet_link_pair_double() -> IvmResult<()> {
 #[test]
 fn test_inet_validate_basic() -> IvmResult<()> {
   let src = "
-		agent A
-		init root ~ a, a ~ A
+    agent A
+    init root ~ a, a ~ A
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
@@ -317,9 +321,9 @@ fn test_inet_validate_basic() -> IvmResult<()> {
 #[test]
 fn test_inet_validate() -> IvmResult<()> {
   let src = "
-		agent A
-		agent B(a, b)
-		init root ~ r, r ~ A, B(a, a) ~ b, b ~ c, c ~ B(d, d), B(e, f) ~ g, g ~ B(f, e)
+    agent A
+    agent B(a, b)
+    init root ~ r, r ~ A, B(a, a) ~ b, b ~ c, c ~ B(d, d), B(e, f) ~ g, g ~ B(f, e)
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
@@ -330,12 +334,12 @@ fn test_inet_validate() -> IvmResult<()> {
 #[test]
 fn test_inet_validate_transitive_connections() -> IvmResult<()> {
   let src = "
-		agent A
-		agent B
-		agent C
-		// init root ~ a, b ~ c, a ~ b, c ~ A
-		// init root ~ a, b ~ c, a ~ b, c ~ A, d ~ B, d ~ C
-		init root ~ B, C ~ a, b ~ c, a ~ b, c ~ A
+    agent A
+    agent B
+    agent C
+    // init root ~ a, b ~ c, a ~ b, c ~ A
+    // init root ~ a, b ~ c, a ~ b, c ~ A, d ~ B, d ~ C
+    init root ~ B, C ~ a, b ~ c, a ~ b, c ~ A
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
@@ -359,8 +363,8 @@ fn test_inet_validate_transitive_connections_generated() -> IvmResult<()> {
     let connections = fmt_connections(&connections);
     let src = &format!(
       "
-			agent A
-			init root ~ a, {connections}, {last} ~ A
+      agent A
+      init root ~ a, {connections}, {last} ~ A
     "
     );
     let ast = Ast::parse(src)?;
@@ -374,11 +378,11 @@ fn test_inet_validate_transitive_connections_generated() -> IvmResult<()> {
 #[test]
 fn test_duplicate_rule() -> IvmResult<()> {
   let src = "
-		agent A
-		agent B
-		rule A ~ B = A ~ B
-		rule B ~ A = A ~ B
-		init root ~ A
+    agent A
+    agent B
+    rule A ~ B = A ~ B
+    rule B ~ A = A ~ B
+    init root ~ A
   ";
   let ast = Ast::parse(src)?;
   assert!(ast.validate(src).is_err());
@@ -388,16 +392,16 @@ fn test_duplicate_rule() -> IvmResult<()> {
 #[test]
 fn test_read_back() -> IvmResult<()> {
   let src = "
-		agent Zero
-		agent Succ(pred)
-		rule Succ(ret) ~ Zero = ret ~ Succ(Zero)
-		rule Succ(ret) ~ Succ(p) = ret ~ Succ(Succ(p))
+    agent Zero
+    agent Succ(pred)
+    rule Succ(ret) ~ Zero = ret ~ Succ(Zero)
+    rule Succ(ret) ~ Succ(p) = ret ~ Succ(Succ(p))
 
-		agent Add(a, b)
-		rule Add(ret, a) ~ Zero = ret ~ a
-		rule Add(ret, a) ~ Succ(b) = ret ~ Succ(cnt), Add(cnt, a) ~ b
+    agent Add(a, b)
+    rule Add(ret, a) ~ Zero = ret ~ a
+    rule Add(ret, a) ~ Succ(b) = ret ~ Succ(cnt), Add(cnt, a) ~ b
 
-		init a ~ Succ(Zero), Add(root, a) ~ Succ(Succ(Succ(Zero)))
+    init a ~ Succ(Zero), Add(root, a) ~ Succ(Succ(Succ(Zero)))
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;

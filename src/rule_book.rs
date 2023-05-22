@@ -1,13 +1,17 @@
 use crate::{
   error::ProgramErrors,
-  inet::{CreatedNodes, INet, NodeIdx},
-  parser::ast::{ActivePair, AgentName, Connection, PortName, Rule},
+  inet::{CreatedNodes, INet, NodeIdx, NodePort},
+  parser::ast::{ActivePair, AgentName, PortName, Rule},
   util::sort_tuples_by_fst,
 };
 use chumsky::prelude::Rich;
 use derive_new::new;
 use hashbrown::HashMap;
 use itertools::Itertools;
+
+/// `NodeIdx` that ports in the rule's RHS sub-net use, to refer to the active pair
+/// Also see `INet::insert_rule_rhs_sub_net`
+pub const EXTERNAL_NODE_IDX: NodeIdx = NodeIdx::MAX;
 
 /// Agent IDs start from 1, 0 is reserved for the root node's agent_id
 pub type AgentId = usize;
@@ -22,8 +26,9 @@ type RuleLhs = (AgentId, AgentId);
 #[derive(Clone)]
 struct RuleRhs {
   rule_src: String, // Rule's source code, used for showing in error messages
-  port_idx_to_name: [Vec<PortName>; 2],
-  connections: Vec<Connection>,
+  // port_idx_to_name: [Vec<PortName>; 2],
+  // external_ports: Vec<NodePort>, // External ports in the rule's RHS sub-net
+  subnet: INet,
 }
 
 /**
@@ -57,13 +62,74 @@ impl RuleBook {
       sort_tuples_by_fst(((lhs_id, lhs_agent), (rhs_id, rhs_agent)));
     let key = (lhs_id, rhs_id); // Ordered pair
 
+    /* let port_idx_to_name = [
+      lhs_agent.ports.iter().map(|port_name| port_name.to_owned()).collect_vec(),
+      rhs_agent.ports.iter().map(|port_name| port_name.to_owned()).collect_vec(),
+    ]; */
+
     let value = RuleRhs {
       rule_src: rule_src.to_owned(),
-      port_idx_to_name: [
-        lhs_agent.ports.iter().map(|port_name| port_name.to_owned()).collect_vec(),
-        rhs_agent.ports.iter().map(|port_name| port_name.to_owned()).collect_vec(),
-      ],
-      connections: rule_rhs.clone(),
+      // connections: rule_rhs.clone(),
+      subnet: {
+        /* // Skip principal port, only auxiliary ports have names
+        let lhs_ports = lhs_agent
+          .ports
+          .iter()
+          .skip(1)
+          .enumerate()
+          .map(|(port_idx, _port_name)| NodePort { node_idx: EXTERNAL_NODE_IDX, port_idx })
+          .collect_vec();
+        let lhs_ports_len = lhs_ports.len();
+        // Skip principal port, only auxiliary ports have names
+        let rhs_ports = rhs_agent
+          .ports
+          .iter()
+          .skip(1)
+          .enumerate()
+          .map(|(port_idx, _port_name)| NodePort {
+            node_idx: EXTERNAL_NODE_IDX,
+            port_idx: lhs_ports_len + port_idx,
+          })
+          .collect_vec();
+
+        let external_ports = [&lhs_ports, &rhs_ports]
+          .into_iter()
+          .zip(&port_idx_to_name)
+          .flat_map(|(node_ports, port_idx_to_name)| {
+            debug_assert_eq!(
+              node_ports.len(),
+              port_idx_to_name.len() + 1,
+              "{rule_src}\n, {port_idx_to_name:?}"
+            );
+
+            // Already skipped principal port above
+            node_ports
+              .iter()
+              .zip(port_idx_to_name)
+              .map(|(&node_port, port_name)| [Err(port_name.as_str()), Ok(node_port)])
+          })
+          .collect(); */
+
+        let external_ports = [lhs_agent, rhs_agent]
+          .into_iter()
+          .flat_map(|agent| &agent.ports)
+          .enumerate()
+          .map(|(external_port_idx, port_name)| {
+            [
+              Err(port_name.as_str()),
+              Ok(NodePort { node_idx: EXTERNAL_NODE_IDX, port_idx: external_port_idx }),
+            ]
+          })
+          .collect();
+
+        let mut net = INet::default();
+        let _created_nodes = net.add_connections(rule_rhs, external_ports, &self.agent_name_to_id);
+        if cfg!(debug_assertions) {
+          net.validate();
+        }
+        net
+      },
+      // port_idx_to_name,
     };
     if let Some(_) = self.rules.insert(key, value) {
       errors.push(Rich::custom(*span, format!("Duplicate rule for active pair `{active_pair}`")));
@@ -82,12 +148,12 @@ impl RuleBook {
       sort_tuples_by_fst(((lhs_id, lhs_node), (rhs_id, rhs_node)));
     let key = (lhs_id, rhs_id); // Ordered pair
 
-    if let Some(RuleRhs { rule_src, port_idx_to_name, connections }) = self.rules.get(&key) {
-      // Build `external_links` (pairs of port name and NodePort)
+    if let Some(RuleRhs { rule_src: _, subnet }) = self.rules.get(&key) {
+      /* // Build `external_links` (pairs of port name and NodePort)
       // based on all auxiliary ports in the active pair, e.g. if the rule LHS
       // is Add(ret, a) ~ Succ(b), the ports {ret, a, b} are external links, then
       // `INet::add_connections` looks up ports when adding the connections of the RHS sub-net
-      let external_links = [lhs_node, rhs_node]
+      let external_ports = [lhs_node, rhs_node]
         .into_iter()
         .zip(port_idx_to_name)
         .flat_map(|(node, port_idx_to_name)| {
@@ -106,7 +172,15 @@ impl RuleBook {
             .map(|(&node_port, port_name)| [Err(port_name.as_str()), Ok(node_port)])
         })
         .collect();
-      Some(net.add_connections(connections, external_links, &self.agent_name_to_id))
+      Some(net.add_connections(connections, external_ports, &self.agent_name_to_id)) */
+      let external_ports = [lhs_node, rhs_node]
+        .into_iter()
+        .flat_map(|node| {
+          // Skip principal port
+          node.ports.iter().skip(1).copied()
+        })
+        .collect_vec();
+      Some(net.insert_rule_rhs_subnet(subnet, &external_ports))
     } else {
       None
     }

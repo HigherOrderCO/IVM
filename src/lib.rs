@@ -4,6 +4,7 @@ pub mod inet_program;
 pub mod lexer;
 pub mod parser;
 pub mod rule_book;
+pub mod util;
+
 #[cfg(test)]
 mod tests;
-pub mod util;

@@ -1,5 +1,5 @@
 agent Zero
-agent Succ(ret)
+agent Succ(p)
 rule Succ(ret) ~ Zero = ret ~ Succ(Zero)
 rule Succ(ret) ~ Succ(p) = ret ~ Succ(Succ(p))
 
@@ -25,7 +25,7 @@ rule Era ~ Succ(p) = Era ~ p
 
 agent Dup(a, b)
 rule Dup(a, b) ~ Zero = a ~ Zero, b ~ Zero
-rule Dup(a, b) ~ Succ(p) = a ~ Succ(a2), b ~ Succ(b2), Dup(a2, b2) ~ p
+rule Dup(a, b) ~ Succ(p) = Dup(p1, p2) ~ p, a ~ Succ(p1), b ~ Succ(p2)
 
 agent Leaf(val)
 agent Node(left, right)

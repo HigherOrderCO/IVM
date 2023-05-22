@@ -2,7 +2,7 @@ use crate::{
   parser::ast::{
     Agent, AgentName, Connection, Connector, PortName, PortNameRef, ROOT_NODE_IDX, ROOT_PORT_NAME,
   },
-  rule_book::{AgentId, RuleBook},
+  rule_book::{AgentId, RuleBook, EXTERNAL_NODE_IDX},
   util::sort_tuple,
 };
 use hashbrown::HashMap;
@@ -76,20 +76,38 @@ impl INet {
     let node = &mut self[node_idx];
     node.used = true;
     node.agent_id = agent_id;
+
+    // TODO: Optimize mem allocs, clear instead of overwrite
     node.ports = vec![Default::default(); port_count].into();
+    // node.ports.clear();
+    // node.ports.resize(port_count, Default::default());
+
     node_idx
   }
 
   /// Make node available for reuse
   pub fn free_node(&mut self, node_idx: NodeIdx) {
-    self[node_idx] = Default::default();
+    self[node_idx] = Default::default(); // TODO: Optimize mem allocs, clear instead of overwrite
     self.free_nodes.push(node_idx);
   }
 
-  /// Mutually link port
+  /// Mutually link ports
   pub fn link(&mut self, a: NodePort, b: NodePort) {
-    self[a] = b;
-    self[b] = a;
+    if a.node_idx != EXTERNAL_NODE_IDX && b.node_idx != EXTERNAL_NODE_IDX {
+      self[a] = b;
+      self[b] = a;
+    }
+  }
+
+  /// Like `link`, except it doesn't link to external nodes.
+  /// Returns true if the link was successful, false otherwise
+  pub fn link_external(&mut self, a: NodePort, b: NodePort) {
+    if a.node_idx != EXTERNAL_NODE_IDX {
+      self[a] = b;
+    }
+    if b.node_idx != EXTERNAL_NODE_IDX {
+      self[b] = a;
+    }
   }
 
   /// Validate the inet, panics if invalid, useful for debugging/tests
@@ -218,26 +236,95 @@ impl INet {
 
     // Link all pairs of ports that could not be linked yet
     while let Some([lhs, rhs]) = deferred_port_links.pop() {
+      eprintln!("deferred_port_links: {deferred_port_links:#?}, {lhs:?} ~ {rhs:?}");
       match (lhs, rhs) {
         (Ok(lhs), Ok(rhs)) => {
           // Both connectors are resolved to ports, thus ready to be linked
-          self.link(lhs, rhs);
+          self.link_external(lhs, rhs);
+          eprintln!("Linked {lhs} ~ {rhs}");
         }
         (Ok(node_port), Err(port_name)) | (Err(port_name), Ok(node_port)) => {
           // Look up the connection target of `port_name` and queue the connection for later linking
           let target = port_target(&mut deferred_port_links, port_name);
           deferred_port_links.push([target, Ok(node_port)]);
         }
-        (Err(lhs), Err(rhs)) => {
+        (Err(lhs_name), Err(rhs_name)) => {
           // Look up the connection target of both connectors, and queue the connection for later linking
-          let lhs = port_target(&mut deferred_port_links, lhs);
-          let rhs = port_target(&mut deferred_port_links, rhs);
-          deferred_port_links.push([lhs, rhs]);
+          let lhs = port_target(&mut deferred_port_links, lhs_name);
+          let rhs = port_target(&mut deferred_port_links, rhs_name);
+          if lhs == Err(lhs_name) && rhs == Err(rhs_name) {
+            // Both connectors are unresolved, so we can't link them
+          } else {
+            deferred_port_links.push([lhs, rhs]);
+          }
         }
       }
     }
 
     created_nodes
+  }
+
+  // Inserts a rule's RHS sub-net into the net, called by `RuleBook::apply`.
+  // `external_ports` is a map from external port indices to ports in the `self` net.
+  // External port indices refer to auxiliary ports in the active pair of the rule LHS:
+  // E.g. if the rule LHS is `X(a, b) ~ Y(c, d)`, then `external_ports` contains the ports of `self`
+  // that map to `[a, b, c, d]` (in that order) in the context of the local rewrite.
+  // In other words, the ports are indexed left-to-right, after ordering both active pair agent IDs:
+  // So the external ports would be the same if the rule LHS was written as `Y(c, d) ~ X(a, b)`.
+  // (Assuming X's AgentId < Y's AgentId in this example.)
+  pub fn insert_rule_rhs_subnet(&mut self, subnet: &INet, external_ports: &[NodePort]) -> CreatedNodes {
+    // TODO: Use reuseable Vec, since subnet indices start at 0
+    // Copy all fields other than `ports` from `subnet` to `self` and keep track of new node indices
+    let subnet_node_idx_to_self_node_idx = subnet
+      .nodes
+      .iter()
+      .map(|node| {
+        debug_assert!(node.used); // Rule RHS subnets should have all unused nodes removed
+
+        // Create a new node in `self` for each node in `subnet`
+        let node_idx = self.new_node(node.agent_id, node.ports.len());
+        self[node_idx].agent_name = node.agent_name.clone();
+
+        node_idx
+      })
+      .collect_vec();
+
+    // Copy mapped ports using new node indices
+    for (subnet_node, self_node_idx) in subnet.nodes.iter().zip(&subnet_node_idx_to_self_node_idx) {
+      // TODO: get_unchecked_mut
+      let self_node = &mut self[*self_node_idx];
+      for (subnet_port, self_port) in subnet_node.ports.iter().zip(self_node.ports.iter_mut()) {
+        let NodePort { node_idx: subnet_node_idx, port_idx } = *subnet_port;
+        *self_port = if subnet_node_idx == EXTERNAL_NODE_IDX {
+          // Map `port_idx` to external port in `self`
+          // TODO: get_unchecked
+          external_ports[port_idx]
+          // TODO: Start external port indices at 1 to avoid confusion with principal port?
+        } else {
+          // Map `node_idx` from `subnet` to `self`
+          // TODO: get_unchecked
+          NodePort { node_idx: subnet_node_idx_to_self_node_idx[subnet_node_idx], port_idx }
+        };
+      }
+    }
+
+    subnet_node_idx_to_self_node_idx
+  }
+
+  /// Remove all unused nodes
+  pub fn remove_unused_nodes(&mut self) {
+    for unused_node_idx in self.free_nodes.drain(..) {
+      // Remove node
+      let _unused_node = self.nodes.remove(unused_node_idx);
+      for node in &mut self.nodes {
+        // Update node indices in links
+        for port in &mut node.ports {
+          if port.node_idx > unused_node_idx {
+            port.node_idx -= 1;
+          }
+        }
+      }
+    }
   }
 
   /// Determines if a given node is part of an active pair and returns the other node in the pair
