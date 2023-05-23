@@ -25,21 +25,20 @@ fn test_lexer() {
 fn test_parser() -> IvmResult<()> {
   assert_eq!(
     Ast::parse(
-      "
-    // Nat
-    agent Zero
-    agent Succ(pred)
-    rule Succ(ret) ~ Zero = ret ~ Succ(Zero)
-    rule Succ(ret) ~ Succ(p) = ret ~ Succ(Succ(p))
+      "// Nat
+      agent Zero
+      agent Succ(pred)
+      rule Succ(ret) ~ Zero = ret ~ Succ(Zero)
+      rule Succ(ret) ~ Succ(p) = ret ~ Succ(Succ(p))
 
-    init root ~ Succ(Succ(Zero))
+      init root ~ Succ(Succ(Zero))
     "
     )?,
     Ast {
       agents: vec![
-        Spanned { span: SimpleSpan::new(12, 22), val: Agent { agent: "Zero".to_string(), ports: vec![] } },
+        Spanned { span: SimpleSpan::new(13, 23), val: Agent { agent: "Zero".to_string(), ports: vec![] } },
         Spanned {
-          span: SimpleSpan::new(25, 41),
+          span: SimpleSpan::new(30, 46),
           val: Agent { agent: "Succ".to_string(), ports: vec!["pred".to_string()] }
         },
       ],
@@ -59,7 +58,7 @@ fn test_parser() -> IvmResult<()> {
               rhs: Connector::Agent(Agent { agent: "Zero".to_string(), ports: vec![] })
             }
           ],
-          span: SimpleSpan::new(44, 84),
+          span: SimpleSpan::new(53, 93),
         },
         Rule {
           lhs: ActivePair {
@@ -76,11 +75,11 @@ fn test_parser() -> IvmResult<()> {
               rhs: Connector::Agent(Agent { agent: "Succ".to_string(), ports: vec!["p".to_string()] })
             }
           ],
-          span: SimpleSpan::new(87, 133),
+          span: SimpleSpan::new(100, 146),
         }
       ],
       init: Spanned {
-        span: SimpleSpan::new(137, 165),
+        span: SimpleSpan::new(154, 182),
         val: vec![
           Connection {
             lhs: Connector::Port(ROOT_PORT_NAME.to_string()),
@@ -102,32 +101,14 @@ fn test_parser() -> IvmResult<()> {
 }
 
 #[test]
-fn test_ast_validation() -> IvmResult<()> {
+fn test_add_one_three() -> IvmResult<()> {
   let src = "
-    agent Zero()
+    agent Zero
     agent Succ(pred)
     rule Succ(ret) ~ Zero = ret ~ Succ(Zero)
     rule Succ(ret) ~ Succ(p) = ret ~ Succ(Succ(p))
 
-    agent Add(a, b)
-    rule Add(ret, a) ~ Zero = ret ~ a
-    rule Add(ret, a) ~ Succ(b) = ret ~ Succ(cnt), Add(cnt, a) ~ b
-
-    init a ~ Succ(Zero), Add(root, a) ~ Succ(Succ(Succ(Zero)))
-  ";
-  assert!(Ast::parse(src)?.validate(src).is_ok());
-  Ok(())
-}
-
-#[test]
-fn test_to_inet() -> IvmResult<()> {
-  let src = "
-    agent Zero()
-    agent Succ(pred)
-    rule Succ(ret) ~ Zero = ret ~ Succ(Zero)
-    rule Succ(ret) ~ Succ(p) = ret ~ Succ(Succ(p))
-
-    agent Add(a, b)
+    agent Add(ret, a)
     rule Add(ret, a) ~ Zero = ret ~ a
     rule Add(ret, a) ~ Succ(b) = ret ~ Succ(cnt), Add(cnt, a) ~ b
 
@@ -136,14 +117,15 @@ fn test_to_inet() -> IvmResult<()> {
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
   let mut program = ast.into_inet_program();
-  eprintln!("{:#?}", program.net);
   assert_eq!(program.net.scan_active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
+  program.reduce();
+  assert_eq!(program.read_back(), "root ~ Succ(Succ(Succ(Succ(Zero))))");
   Ok(())
 }
 
 #[test]
-fn test_reduce_inet() -> IvmResult<()> {
+fn test_add_zero_zero() -> IvmResult<()> {
   let src = "
     agent Zero()
     agent Succ(pred)
@@ -163,9 +145,9 @@ fn test_reduce_inet() -> IvmResult<()> {
   assert_eq!(program.net.scan_active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   program.reduce();
-  eprintln!("{:#?}", program.net);
   eprintln!("program.net.active_pairs(): {:#?}", program.net.scan_active_pairs());
   assert_eq!(program.net.scan_active_pairs(), vec![(0, 3)], "{}\n{:#?}", program.ast, program.net);
+  assert_eq!(program.read_back(), "root ~ Zero");
   Ok(())
 }
 
@@ -180,12 +162,11 @@ fn test_reduce_inet_basic() -> IvmResult<()> {
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
   let mut program = ast.into_inet_program();
-  eprintln!("{:#?}", program.net);
   assert_eq!(program.net.scan_active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   assert!(!program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
-  eprintln!("{:#?}", program.net);
   eprintln!("program.net.active_pairs(): {:#?}", program.net.scan_active_pairs());
+  assert_eq!(program.read_back(), "root ~ B");
   Ok(())
 }
 
@@ -193,28 +174,73 @@ fn test_reduce_inet_basic() -> IvmResult<()> {
 fn test_reduce_inet_ctor_era() -> IvmResult<()> {
   let src = "
     agent A(a, b)
-    agent B(c, d)
+    agent B(a, b)
+    agent Era
     agent R
     rule A(e, f) ~ B(g, h) = e ~ g, f ~ h
-    init A(root, i) ~ B(j, h), i ~ h, j ~ R
+    rule Era ~ Era =
+    init A(root, i) ~ B(j, h), i ~ Era, j ~ R, h ~ Era
   ";
-  // rule A(e, f) ~ B(g, h) = e ~ g, f ~ h
-  // rule Era ~ Era =
-  // init A(root, i) ~ B(j, h), i ~ Era, j ~ R, h ~ Era
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
   let mut program = ast.into_inet_program();
-  eprintln!("{:#?}", program.net);
   assert_eq!(program.net.scan_active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   assert!(!program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
-  eprintln!("{:#?}", program.net);
   eprintln!("program.net.active_pairs(): {:#?}", program.net.scan_active_pairs());
   assert_eq!(program.net.scan_active_pairs(), vec![(0, 4)], "{}\n{:#?}", program.ast, program.net);
   program.reduce();
   let result = program.read_back();
   assert_eq!(result, "root ~ R");
+  Ok(())
+}
+
+#[test]
+fn test_reduce_inet_ctor_res_direct() -> IvmResult<()> {
+  let src = "
+    agent A(a, b)
+    agent B(a, b)
+    agent Res
+    rule A(e, f) ~ B(g, h) = e ~ g, f ~ h
+    init A(root, i) ~ B(j, h), i ~ h, j ~ Res
+  ";
+  let ast = Ast::parse(src)?;
+  let ast = ast.validate(src)?;
+  let mut program = ast.into_inet_program();
+  for step in 0 .. {
+    let result = program.read_back();
+    eprintln!("{step:2}: {result}");
+    if !program.net.scan_active_pairs_and_reduce_step(&program.rule_book) {
+      assert_eq!(result, "root ~ Res");
+      break;
+    }
+  }
+  Ok(())
+}
+
+#[test]
+fn test_reduce_inet_ctor_res_tmp() -> IvmResult<()> {
+  let src = "
+    agent A(a, b)
+    agent B(a, b)
+    agent Tmp(a)
+    agent Res
+    rule A(e, f) ~ B(g, h) = Tmp(e) ~ g, f ~ h
+    rule Tmp(a) ~ Res = a ~ Res
+    init A(root, i) ~ B(j, h), i ~ h, j ~ Res
+  ";
+  let ast = Ast::parse(src)?;
+  let ast = ast.validate(src)?;
+  let mut program = ast.into_inet_program();
+  for step in 0 .. {
+    let result = program.read_back();
+    eprintln!("{step:2}: {result}");
+    if !program.net.scan_active_pairs_and_reduce_step(&program.rule_book) {
+      assert_eq!(result, "root ~ Res");
+      break;
+    }
+  }
   Ok(())
 }
 
@@ -227,9 +253,25 @@ fn test_reduce_inet_link_self_principal() -> IvmResult<()> {
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
   let mut program = ast.into_inet_program();
-  eprintln!("{:#?}", program.net);
   assert_eq!(program.net.scan_active_pairs().len(), 0, "{}\n{:#?}", program.ast, program.net);
   assert!(!program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
+  assert_eq!(program.read_back(), "A(root, _1) ~ _1");
+  Ok(())
+}
+
+#[test]
+fn test_prevent_self_inlining() -> IvmResult<()> {
+  let src = "
+    agent A(a, b)
+    agent B(a, b, c)
+    init A(root, B(a, a, i)) ~ i
+  ";
+  let ast = Ast::parse(src)?;
+  let ast = ast.validate(src)?;
+  let mut program = ast.into_inet_program();
+  assert_eq!(program.net.scan_active_pairs().len(), 0, "{}\n{:#?}", program.ast, program.net);
+  assert!(!program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
+  assert_eq!(program.read_back(), "A(root, B(_2, _2, _4)) ~ _4");
   Ok(())
 }
 
@@ -247,7 +289,7 @@ fn test_reduce_inet_link_self_aux() -> IvmResult<()> {
   assert_eq!(program.net.scan_active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   assert!(!program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
-  eprintln!("{:#?}", program.net);
+  assert_eq!(program.read_back(), "root ~ E");
   Ok(())
 }
 
@@ -265,8 +307,8 @@ fn test_reduce_inet_link_self_double() -> IvmResult<()> {
   assert_eq!(program.net.scan_active_pairs().len(), 2, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   assert!(!program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
-  eprintln!("{:#?}", program.net);
   assert_eq!(program.net.scan_active_pairs(), vec![(0, 3)], "{}\n{:#?}", program.ast, program.net);
+  assert_eq!(program.read_back(), "root ~ E");
   Ok(())
 }
 
@@ -284,7 +326,7 @@ fn test_reduce_inet_link_pair_single() -> IvmResult<()> {
   assert_eq!(program.net.scan_active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   assert!(!program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
-  eprintln!("{:#?}", program.net);
+  assert_eq!(program.read_back(), "root ~ E");
   Ok(())
 }
 
@@ -302,7 +344,7 @@ fn test_reduce_inet_link_pair_double() -> IvmResult<()> {
   assert_eq!(program.net.scan_active_pairs().len(), 2, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   assert!(!program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
-  eprintln!("{:#?}", program.net);
+  assert_eq!(program.read_back(), "root ~ E");
   Ok(())
 }
 
@@ -314,8 +356,9 @@ fn test_inet_validate_basic() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let program = ast.into_inet_program();
-  eprintln!("{:#?}", program.net);
+  let mut program = ast.into_inet_program();
+  program.reduce();
+  assert_eq!(program.read_back(), "root ~ A");
   Ok(())
 }
 
@@ -328,7 +371,9 @@ fn test_inet_validate() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let _program = ast.into_inet_program();
+  let mut program = ast.into_inet_program();
+  program.reduce();
+  assert_eq!(program.read_back(), "root ~ A, B(_0, _0) ~ B(_2, _2), B(_4, _5) ~ B(_5, _4)");
   Ok(())
 }
 
@@ -344,8 +389,9 @@ fn test_inet_validate_transitive_connections() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let program = ast.into_inet_program();
-  eprintln!("{:#?}", program.net);
+  let mut program = ast.into_inet_program();
+  program.reduce();
+  assert_eq!(program.read_back(), "root ~ B, C ~ A");
   Ok(())
 }
 
@@ -372,6 +418,7 @@ fn test_inet_validate_transitive_connections_generated() -> IvmResult<()> {
     let ast = ast.validate(src)?;
     let mut program = ast.into_inet_program();
     program.reduce();
+    assert_eq!(program.read_back(), "root ~ A");
   }
   Ok(())
 }
@@ -408,10 +455,7 @@ fn test_read_back() -> IvmResult<()> {
   let ast = ast.validate(src)?;
   let mut program = ast.into_inet_program();
   program.reduce();
-  eprintln!("{:#?}", program.net);
-  let result = program.read_back();
-  eprintln!("{result}",);
-  assert_eq!(result, "root ~ Succ(Succ(Succ(Succ(Zero))))");
+  assert_eq!(program.read_back(), "root ~ Succ(Succ(Succ(Succ(Zero))))");
   Ok(())
 }
 
@@ -569,11 +613,7 @@ fn test_lambda() -> IvmResult<()> {
   }
   Ok(())
 }
-/*
-fn nat(n: usize) -> String {
-  if n == 0 { "Zero".to_string() } else { format!("Succ({})", nat(n - 1)) }
-}
-*/
+
 #[test]
 fn test_sum() -> IvmResult<()> {
   let src = include_str!("../examples/sum.ivm");
@@ -584,5 +624,24 @@ fn test_sum() -> IvmResult<()> {
   let result = program.read_back();
 
   assert_eq!(result, "root ~ T");
+  Ok(())
+}
+
+#[test]
+fn test_treesum() -> IvmResult<()> {
+  fn nat(n: usize) -> String {
+    if n == 0 { "Zero".to_string() } else { format!("Succ({})", nat(n - 1)) }
+  }
+
+  let n = 4;
+  let src = &std::fs::read_to_string("./benches/treesum.ivm").unwrap();
+  let src = &src.replace("{n}", &nat(n));
+  let ast = Ast::parse(src).unwrap();
+  let ast = ast.validate(src).unwrap();
+  let mut program = ast.into_inet_program();
+  program.reduce();
+  let result = program.read_back();
+  let res = nat(1 << n);
+  assert_eq!(result, format!("root ~ {res}"));
   Ok(())
 }

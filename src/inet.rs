@@ -97,27 +97,14 @@ impl INet {
 
   /// Mutually link ports
   pub fn link(&mut self, a: NodePort, b: NodePort) {
-    // if a.node_idx != BOUNDARY_NODE_IDX && b.node_idx != BOUNDARY_NODE_IDX {
     self[a] = b;
     self[b] = a;
-    // }
   }
-
-  /* /// Like `link`, except it doesn't link to external nodes.
-  /// Returns true if the link was successful, false otherwise
-  pub fn link_external(&mut self, a: NodePort, b: NodePort) {
-    if a.node_idx != BOUNDARY_NODE_IDX {
-      self[a] = b;
-    }
-    if b.node_idx != BOUNDARY_NODE_IDX {
-      self[b] = a;
-    }
-  } */
 
   /// Validate the inet, panics if invalid, useful for debugging/tests
   /// If an INet generated from a valid AST fails validation, it'd be a bug
   pub fn validate(&self) {
-    println!("validate: {self:#?}");
+    // println!("validate: {self:#?}");
     let mut used_node_count = 0;
     let mut contains_boundary_node = false;
     for (node_idx, node) in self.nodes.iter().enumerate() {
@@ -137,7 +124,7 @@ impl INet {
           let src = port(node_idx, port_idx);
           let dst = self[src];
 
-          println!("{src:?} ~ {dst:?}");
+          // eprintln!("{src:?} ~ {dst:?}");
           assert_eq!(self[dst], src, "\nNon-bidirectional link {:?}:\n{self:#?}", (src, dst));
 
           assert!(self[dst.node_idx].used, "\nUsed node linked to unused node {:?}:\n{self:#?}", (src, dst));
@@ -253,13 +240,11 @@ impl INet {
 
     // Link all pairs of ports that could not be linked yet
     while let Some([lhs, rhs]) = deferred_port_links.pop() {
-      eprintln!("deferred_port_links: {deferred_port_links:#?}, {lhs:?} ~ {rhs:?}");
+      // eprintln!("deferred_port_links: {deferred_port_links:#?}, {lhs:?} ~ {rhs:?}");
       match (lhs, rhs) {
         (Ok(lhs), Ok(rhs)) => {
           // Both connectors are resolved to ports, thus ready to be linked
-          // self.link_external(lhs, rhs);
           self.link(lhs, rhs);
-          eprintln!("Linked {lhs} ~ {rhs}\n{self:#?}");
         }
         (Ok(node_port), Err(port_name)) | (Err(port_name), Ok(node_port)) => {
           // Look up the connection target of `port_name` and queue the connection for later linking
@@ -291,9 +276,10 @@ impl INet {
   // So the external ports would be the same if the rule LHS was written as `Y(c, d) ~ X(a, b)`.
   // (Assuming X's AgentId < Y's AgentId in this example.)
   pub fn insert_rule_rhs_subnet(&mut self, subnet: &INet, external_ports: &[NodePort]) -> CreatedNodes {
-    // TODO: Use reuseable Vec, since subnet indices start at 0
-    // Copy all fields other than `ports` from `subnet` to `self` and keep track of new node indices
+    // Copy all fields other than `ports` from `subnet` node to `self` node
+    // and keep track of new node indices
     // Skip boundary node
+    // TODO: Reuse Vec
     let mut subnet_node_idx_to_self_node_idx = subnet
       .nodes
       .iter()
@@ -318,7 +304,7 @@ impl INet {
       let self_node = &mut self[*self_node_idx];
       for (subnet_port, self_port) in subnet_node.ports.iter().zip(self_node.ports.iter_mut()) {
         let NodePort { node_idx: subnet_node_idx, port_idx } = *subnet_port;
-        *self_port = if subnet_node_idx == BOUNDARY_NODE_IDX {
+        /* *self_port = if subnet_node_idx == BOUNDARY_NODE_IDX {
           // Map `port_idx` to external port in `self`
           // TODO: get_unchecked
           external_ports[port_idx]
@@ -327,27 +313,46 @@ impl INet {
           // Map `node_idx` from `subnet` to `self`
           // TODO: get_unchecked
           NodePort { node_idx: subnet_node_idx_to_self_node_idx[subnet_node_idx], port_idx }
-        };
+        }; */
         // *self_port = NodePort { node_idx: subnet_node_idx_to_self_node_idx[subnet_node_idx - 1], port_idx };
+        // Copy `port_idx` unchanged but map `node_idx` from `subnet` to `self`
+        *self_port = NodePort { node_idx: subnet_node_idx_to_self_node_idx[subnet_node_idx], port_idx };
       }
     }
-    /* let boundary_node = &subnet.nodes[BOUNDARY_NODE_IDX];
+
+    // Transitively link boundary node's ports and then remove it, similar to intermediary nodes in `rewrite`
+    let boundary_node_idx_in_self = subnet_node_idx_to_self_node_idx[BOUNDARY_NODE_IDX];
+    let boundary_node: &Node = &self[boundary_node_idx_in_self];
     debug_assert_eq!(boundary_node.agent_id, BOUNDARY_AGENT_ID);
     debug_assert_eq!(boundary_node.ports.len(), external_ports.len());
-    let src = boundary_node[0]; // TODO: Map node_idx if it's BOUNDARY_NODE_IDX
-    let dst = boundary_node[1];
-    self.link(src, dst);
-    self.free_node(node_idx); */
+    for port_idx in 0 .. boundary_node.ports.len() {
+      let target_port = port(boundary_node_idx_in_self, port_idx);
+      let src = external_ports[port_idx];
+      // If `target_port` points to boundary node, we have to link it transitively
+      if target_port.node_idx == boundary_node_idx_in_self {
+        // If this occurs, it means that a wire connects multiple boundary node ports
+        // E.g. in `rule A(e, f) ~ B(g, h) = C(e) ~ g, f ~ h`
+        // The boundary node will have ports [(1, 1), (0, 3), (1, 0), (0, 1)]
+        // The ports whose target `node_idx` is 0 (BOUNDARY_NODE_IDX) refer to the boundary node.
+        // They are self-links of the boundary node, which means two external ports should be linked
+        // rather than linking a port of a subnet node to an external port.
+        // So they have to be treated differently: Since the boundary node will be removed below,
+        // we have to follow the self-link to find the external target port.
+        // Each boundary port should only be processed once. Since we process other boundary node
+        // ports by doing this, we have to avoid processing already linked self-links again later.
+        // We do this by only processing this port if it's less than its target port (`port_idx`).
+        if port_idx < target_port.port_idx {
+          let dst = external_ports[target_port.port_idx];
+          self.link(dst, src);
+        }
+      }
+      let dst = self[target_port];
+      self.link(dst, src);
+    }
 
-    // Pass-through link boundary node and then remove it, similar to intermediary nodes in `rewrite`
-    let node_idx = subnet_node_idx_to_self_node_idx[BOUNDARY_NODE_IDX];
-    let node: &Node = &self[node_idx];
-    debug_assert_eq!(node.agent_id, BOUNDARY_AGENT_ID);
-    debug_assert_eq!(node.ports.len(), external_ports.len());
-    let src = node[0];
-    let dst = node[1];
-    self.link(src, dst);
-    self.free_node(node_idx);
+    // Remove boundary node, now that we linked all its ports transitively
+    self.free_node(boundary_node_idx_in_self);
+    // Also remove boundary node from list of created nodes
     subnet_node_idx_to_self_node_idx.swap_remove(BOUNDARY_NODE_IDX);
 
     subnet_node_idx_to_self_node_idx
@@ -466,7 +471,7 @@ impl INet {
     }
 
     // Apply rewrite rule to active pair if there is a matching rule
-    let rule_application_result = rule_book.apply(self, (a, b));
+    let rule_application_result = rule_book.apply_rewrite_rule(self, (a, b));
 
     // Now that the rewrite is done (or no rewrite happened if there was no applicable rule),
     // we can remove the intermediary nodes and link their two wires together into one again.
