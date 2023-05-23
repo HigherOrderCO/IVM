@@ -151,6 +151,7 @@ impl INet {
   /// If the connector is a port, `Err(port_name)` is returned so that it can be linked later.
   /// If the connector is an agent, it is added as a new node and its principal port is returned as `Ok(port)`.
   /// Connections to auxiliary ports are added to `deferred_port_links` so that they can be linked later.
+  /// This function is only called by `INet::add_connections`
   fn add_connector<'a, 'b: 'a>(
     &mut self,
     connector: &'b Connector,
@@ -276,66 +277,6 @@ impl INet {
     created_nodes
   }
 
-  /// Inserts a rule's RHS sub-net into the net, called by `RuleBook::apply_rewrite_rule`.
-  /// It works by:
-  /// - Creating nodes in `self` for the `subnet` nodes, to get new node indices
-  /// - Copying ports of `subnet` nodes to the new nodes, translating links using new node indices
-  /// - Pass-through-linking the boundary node's ports to the corresponding ports in `self`
-  /// - Removing the boundary node from `self`
-  /// `external_ports` is a map from external port indices to ports in the `self` net.
-  /// External port indices refer to auxiliary ports in the active pair of the rule LHS:
-  /// E.g. if the rule LHS is `X(a, b) ~ Y(c, d)`, then `external_ports` contains the ports of `self`
-  /// that map to `[a, b, c, d]` (in that order) in the context of the local rewrite.
-  /// In other words, the ports are indexed left-to-right, after ordering both active pair agent IDs:
-  /// So the external ports would be the same if the rule LHS was written as `Y(c, d) ~ X(a, b)`.
-  /// (Assuming X's AgentId < Y's AgentId in this example.)
-  /// This function assumes that `reuse.subnet_node_idx_to_self_node_idx` is empty
-  /// and that `reuse.rule_book_external_ports` contains the external ports of the subnet.
-  /// When this function returns, `reuse.inet_subnet_node_idx_to_self_node_idx` contains the node indices
-  /// of the inserted subnet nodes, to enable `rewrite_active_pair` to determine new active pairs.
-  pub fn insert_rule_rhs_subnet(&mut self, subnet: &INet, reuse: &mut ReuseableSubnetData) {
-    let external_ports = &reuse.rule_book_external_ports;
-    let subnet_node_idx_to_self_node_idx = &mut reuse.inet_subnet_node_idx_to_self_node_idx;
-
-    // Copy fields except `ports` from `subnet` node to `self` node and store new node indices
-    subnet_node_idx_to_self_node_idx.extend(subnet.nodes.iter().map(|node| {
-      debug_assert!(node.used); // Rule RHS subnet must have all unused nodes removed
-
-      // Create a new node in `self` for each node in `subnet`
-      let node_idx = self.new_node(node.agent_id, node.ports.len());
-      self[node_idx].agent_name = node.agent_name.clone();
-
-      node_idx
-    }));
-
-    // Copy mapped ports using new node indices
-    for (subnet_node, self_node_idx) in subnet.nodes.iter().zip(&*subnet_node_idx_to_self_node_idx) {
-      // TODO: get_unchecked_mut
-      let self_node = &mut self[*self_node_idx];
-      for (subnet_port, self_port) in subnet_node.ports.iter().zip(self_node.ports.iter_mut()) {
-        let NodePort { node_idx: subnet_node_idx, port_idx } = *subnet_port;
-        // Copy `port_idx` unchanged but map `node_idx` from `subnet` to `self`
-        *self_port = NodePort { node_idx: subnet_node_idx_to_self_node_idx[subnet_node_idx], port_idx };
-      }
-    }
-
-    // Pass-through link boundary node's ports and then remove it, like intermediary nodes in `rewrite_active_pair`
-    // Remove boundary node from list of created nodes
-    let boundary_node_idx_in_self = subnet_node_idx_to_self_node_idx.swap_remove(BOUNDARY_NODE_IDX);
-    let boundary_node: &Node = &self[boundary_node_idx_in_self];
-    debug_assert_eq!(boundary_node.agent_id, BOUNDARY_AGENT_ID);
-    debug_assert_eq!(boundary_node.ports.len(), external_ports.len());
-    for (port_idx, &ext_port) in external_ports.iter().enumerate() {
-      // Note: `target_port` doesn't necessary point to a former `subnet` node,
-      // if boundary node contains self-links. See `test_boundary_node_self_links`
-      let target_port = self[port(boundary_node_idx_in_self, port_idx)];
-      self.link(ext_port, target_port);
-    }
-
-    // Remove boundary node, now that we pass-through-linked all its ports to external ports
-    self.free_node(boundary_node_idx_in_self);
-  }
-
   /// Remove all unused nodes
   pub fn remove_unused_nodes(&mut self) {
     for unused_node_idx in self.free_nodes.drain(..) {
@@ -350,31 +291,6 @@ impl INet {
         }
       }
     }
-  }
-
-  /// Determines if a given node is part of an active pair and returns the other node in the pair
-  fn node_is_part_of_active_pair(&self, node_idx: NodeIdx) -> Option<NodeIdx> {
-    let dst = self[port(node_idx, 0)];
-    // After validation, we can assume that dst.node_idx == node_idx
-    (dst.port_idx == 0).then_some(dst.node_idx)
-  }
-
-  /// Determine active pairs that can potentially be rewritten if there is a matching rule
-  pub fn scan_active_pairs(&self) -> ActivePairs {
-    let mut active_pairs = vec![];
-    for (node_idx, node) in self.nodes.iter().enumerate() {
-      if !node.used {
-        continue;
-      }
-
-      if let Some(dst_node_idx) = self.node_is_part_of_active_pair(node_idx) {
-        // Only process each bidirectional link once, to prevent duplicates
-        if node_idx < dst_node_idx {
-          active_pairs.push((node_idx, dst_node_idx));
-        }
-      }
-    }
-    active_pairs
   }
 
   /// Rewrite active pair using rule book.
@@ -498,6 +414,91 @@ impl INet {
     rewrite_happened
   }
 
+  /// Inserts a rule's RHS sub-net into the net, called by `RuleBook::apply_rewrite_rule`.
+  /// It works by:
+  /// - Creating nodes in `self` for the `subnet` nodes, to get new node indices
+  /// - Copying ports of `subnet` nodes to the new nodes, translating links using new node indices
+  /// - Pass-through-linking the boundary node's ports to the corresponding ports in `self`
+  /// - Removing the boundary node from `self`
+  /// `external_ports` is a map from external port indices to ports in the `self` net.
+  /// External port indices refer to auxiliary ports in the active pair of the rule LHS:
+  /// E.g. if the rule LHS is `X(a, b) ~ Y(c, d)`, then `external_ports` contains the ports of `self`
+  /// that map to `[a, b, c, d]` (in that order) in the context of the local rewrite.
+  /// In other words, the ports are indexed left-to-right, after ordering both active pair agent IDs:
+  /// So the external ports would be the same if the rule LHS was written as `Y(c, d) ~ X(a, b)`.
+  /// (Assuming X's AgentId < Y's AgentId in this example.)
+  /// This function assumes that `reuse.subnet_node_idx_to_self_node_idx` is empty
+  /// and that `reuse.rule_book_external_ports` contains the external ports of the subnet.
+  /// When this function returns, `reuse.inet_subnet_node_idx_to_self_node_idx` contains the node indices
+  /// of the inserted subnet nodes, to enable `rewrite_active_pair` to determine new active pairs.
+  pub fn insert_rule_rhs_subnet(&mut self, subnet: &INet, reuse: &mut ReuseableSubnetData) {
+    let external_ports = &reuse.rule_book_external_ports;
+    let subnet_node_idx_to_self_node_idx = &mut reuse.inet_subnet_node_idx_to_self_node_idx;
+
+    // Copy fields except `ports` from `subnet` node to `self` node and store new node indices
+    subnet_node_idx_to_self_node_idx.extend(subnet.nodes.iter().map(|node| {
+      debug_assert!(node.used); // Rule RHS subnet must have all unused nodes removed
+
+      // Create a new node in `self` for each node in `subnet`
+      let node_idx = self.new_node(node.agent_id, node.ports.len());
+      self[node_idx].agent_name = node.agent_name.clone();
+
+      node_idx
+    }));
+
+    // Copy mapped ports using new node indices
+    for (subnet_node, self_node_idx) in subnet.nodes.iter().zip(&*subnet_node_idx_to_self_node_idx) {
+      // TODO: get_unchecked_mut
+      let self_node = &mut self[*self_node_idx];
+      for (subnet_port, self_port) in subnet_node.ports.iter().zip(self_node.ports.iter_mut()) {
+        let NodePort { node_idx: subnet_node_idx, port_idx } = *subnet_port;
+        // Copy `port_idx` unchanged but map `node_idx` from `subnet` to `self`
+        *self_port = NodePort { node_idx: subnet_node_idx_to_self_node_idx[subnet_node_idx], port_idx };
+      }
+    }
+
+    // Pass-through link boundary node's ports and then remove it, like intermediary nodes in `rewrite_active_pair`
+    // Remove boundary node from list of created nodes
+    let boundary_node_idx_in_self = subnet_node_idx_to_self_node_idx.swap_remove(BOUNDARY_NODE_IDX);
+    let boundary_node: &Node = &self[boundary_node_idx_in_self];
+    debug_assert_eq!(boundary_node.agent_id, BOUNDARY_AGENT_ID);
+    debug_assert_eq!(boundary_node.ports.len(), external_ports.len());
+    for (port_idx, &ext_port) in external_ports.iter().enumerate() {
+      // Note: `target_port` doesn't necessary point to a former `subnet` node,
+      // if boundary node contains self-links. See `test_boundary_node_self_links`
+      let target_port = self[port(boundary_node_idx_in_self, port_idx)];
+      self.link(ext_port, target_port);
+    }
+
+    // Remove boundary node, now that we pass-through-linked all its ports to external ports
+    self.free_node(boundary_node_idx_in_self);
+  }
+
+  /// Determines if a given node is part of an active pair and returns the other node in the pair
+  fn node_is_part_of_active_pair(&self, node_idx: NodeIdx) -> Option<NodeIdx> {
+    let dst = self[port(node_idx, 0)];
+    // After validation, we can assume that dst.node_idx == node_idx
+    (dst.port_idx == 0).then_some(dst.node_idx)
+  }
+
+  /// Determine active pairs that can potentially be rewritten if there is a matching rule
+  pub fn scan_active_pairs(&self) -> ActivePairs {
+    let mut active_pairs = vec![];
+    for (node_idx, node) in self.nodes.iter().enumerate() {
+      if !node.used {
+        continue;
+      }
+
+      if let Some(dst_node_idx) = self.node_is_part_of_active_pair(node_idx) {
+        // Only process each bidirectional link once, to prevent duplicates
+        if node_idx < dst_node_idx {
+          active_pairs.push((node_idx, dst_node_idx));
+        }
+      }
+    }
+    active_pairs
+  }
+
   /// Perform one reduction step:
   /// Scan for active pairs and rewrite the first one for which a rule exists.
   /// Returns `true` if a rewrite happened, false otherwise (either because
@@ -526,7 +527,7 @@ impl INet {
       if self.rewrite_active_pair(active_pair, rule_book, &mut reuse) {
         active_pairs.extend(&reuse.inet_new_active_pairs_created_by_rewrite);
         reduction_count += 1;
-        reuse.clear();
+        reuse.clear_when_rule_matched();
       } else {
         reuse.clear_when_no_rule_matched();
       }
@@ -611,8 +612,8 @@ impl INet {
 /// Reuseable memory between rewrites, to avoid unnecessary allocations
 #[derive(Default)]
 struct ReuseableRewriteData {
-  inet_active_pair_candidate_nodes: Vec<NodeIdx>,
-  inet_intermediary_nodes: Vec<NodeIdx>,
+  inet_active_pair_candidate_nodes: NodeIndices,
+  inet_intermediary_nodes: NodeIndices,
   subnet: ReuseableSubnetData,
   inet_new_active_pairs_created_by_rewrite: ActivePairs,
 }
@@ -625,13 +626,14 @@ pub struct ReuseableSubnetData {
 }
 
 impl ReuseableRewriteData {
-  // When no rule matched, only the first two fields were populated
+  /// When no rule matched, only the first two fields were populated
   fn clear_when_no_rule_matched(&mut self) {
     self.inet_active_pair_candidate_nodes.clear();
     self.inet_intermediary_nodes.clear();
   }
 
-  fn clear(&mut self) {
+  /// When a rule matched, all fields were populated
+  fn clear_when_rule_matched(&mut self) {
     self.inet_active_pair_candidate_nodes.clear();
     self.inet_intermediary_nodes.clear();
     self.subnet.rule_book_external_ports.clear();

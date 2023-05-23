@@ -225,7 +225,7 @@ impl Ast {
       .collect::<HashMap<AgentName, AgentId>>();
 
     // Validate rules and build rule book
-    let mut rule_book = RuleBook::new(agent_name_to_id);
+    let mut rule_book = RuleBook::default();
     for rule in &self.rules {
       /// Reject duplicate port names in agents of active pair
       /// E.g. A(a, a) ~ B is invalid, port names in active pair must be distinct
@@ -302,7 +302,7 @@ impl Ast {
 
       // Add rule to rule book
       if active_pair_agents_exist {
-        rule_book.add_rule(rule, rule_src, &mut errors);
+        rule_book.add_rule(rule, rule_src, &agent_name_to_id, &mut errors);
       }
     }
 
@@ -333,7 +333,11 @@ impl Ast {
     drop(agent_arity);
     drop(agent_usages_in_rule_active_pairs);
 
-    pass_output_and_errors_to_result(src, Some(ValidatedAst { ast: self, rule_book }), errors)
+    pass_output_and_errors_to_result(
+      src,
+      Some(ValidatedAst { ast: self, rule_book, agent_name_to_id }),
+      errors,
+    )
   }
 }
 
@@ -341,12 +345,13 @@ impl Ast {
 pub struct ValidatedAst {
   pub ast: Ast,
   pub rule_book: RuleBook,
+  pub agent_name_to_id: HashMap<AgentName, AgentId>,
 }
 
 impl ValidatedAst {
   /// Generate an `INetProgram` from a `ValidatedAst`
   pub fn into_inet_program(self) -> INetProgram {
-    let Self { ast, rule_book } = self;
+    let Self { ast, rule_book, agent_name_to_id } = self;
 
     let mut net = INet::default();
 
@@ -359,12 +364,12 @@ impl ValidatedAst {
     // The root node is the only external link ("free variable") in the `init` connections
     let external_links = vec![[Err(ROOT_PORT_NAME), Ok(root_port)]];
 
-    net.add_connections(&ast.init.val, external_links, &rule_book.agent_name_to_id);
+    net.add_connections(&ast.init.val, external_links, &agent_name_to_id);
 
     if cfg!(debug_assertions) {
       net.validate();
     }
-    INetProgram { net, ast, rule_book }
+    INetProgram { net, ast, rule_book, agent_name_to_id }
   }
 }
 

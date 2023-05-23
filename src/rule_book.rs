@@ -5,7 +5,6 @@ use crate::{
   util::sort_tuples_by_fst,
 };
 use chumsky::prelude::Rich;
-use derive_new::new;
 use hashbrown::HashMap;
 use itertools::Itertools;
 
@@ -41,21 +40,25 @@ During rule application, the rule RHS sub-net is constructed and external links
 are connected to the corresponding ports in the active pair of the net.
 Currently the ports are linked by name, but this could be changed to use port ids.
 */
-#[derive(new, Clone)]
+#[derive(Default, Clone)]
 pub struct RuleBook {
-  pub agent_name_to_id: HashMap<AgentName, AgentId>,
-  #[new(default)]
   rules: HashMap<RuleLhs, RuleRhs>,
 }
 
 impl RuleBook {
   /// Insert into rule book and check for duplicate rules
-  pub fn add_rule(&mut self, rule: &Rule, rule_src: &str, errors: &mut ProgramErrors) {
+  pub fn add_rule(
+    &mut self,
+    rule: &Rule,
+    rule_src: &str,
+    agent_name_to_id: &HashMap<AgentName, AgentId>,
+    errors: &mut ProgramErrors,
+  ) {
     let Rule { lhs: active_pair, rhs: rule_rhs, span } = rule;
 
     let ActivePair { lhs: lhs_agent, rhs: rhs_agent } = active_pair;
-    let lhs_id = self.agent_name_to_id[&lhs_agent.agent];
-    let rhs_id = self.agent_name_to_id[&rhs_agent.agent];
+    let lhs_id = agent_name_to_id[&lhs_agent.agent];
+    let rhs_id = agent_name_to_id[&rhs_agent.agent];
 
     // Construct RuleLhs, ordered pair of AgentIDs. Order agents along with AgentIDs
     let ((lhs_id, lhs_agent), (rhs_id, rhs_agent)) =
@@ -90,7 +93,7 @@ impl RuleBook {
           .collect_vec()
           .into();
 
-        let _created_nodes = subnet.add_connections(rule_rhs, external_ports, &self.agent_name_to_id);
+        let _created_nodes = subnet.add_connections(rule_rhs, external_ports, agent_name_to_id);
         if cfg!(debug_assertions) {
           subnet.validate();
         }

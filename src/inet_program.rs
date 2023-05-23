@@ -1,8 +1,13 @@
 use crate::{
   inet::INet,
-  parser::{ast::Ast, display::fmt_nested_connections, flatten::unflatten_connections},
-  rule_book::RuleBook,
+  parser::{
+    ast::{AgentName, Ast},
+    display::fmt_nested_connections,
+    flatten::unflatten_connections,
+  },
+  rule_book::{AgentId, RuleBook},
 };
+use hashbrown::HashMap;
 
 /// `INetProgram` contains all context necessary to reduce the net
 #[derive(Clone)]
@@ -10,6 +15,7 @@ pub struct INetProgram {
   pub ast: Ast, // Not necessary for reduction, but useful for debugging
   pub net: INet,
   pub rule_book: RuleBook,
+  pub agent_name_to_id: HashMap<AgentName, AgentId>,
 }
 
 impl INetProgram {
