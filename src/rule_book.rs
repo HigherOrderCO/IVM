@@ -54,7 +54,7 @@ impl RuleBook {
   pub fn insert_rule(
     &mut self,
     rule: &Rule,
-    rule_src: &str,
+    _rule_src: &str,
     agent_name_to_id: &HashMap<AgentName, AgentId>,
     errors: &mut ProgramErrors,
   ) {
@@ -91,7 +91,6 @@ impl RuleBook {
         // (== the sum of the aux ports in the active pair)
         let boundary_node_idx = subnet.new_node(BOUNDARY_AGENT_ID, external_ports.len());
         debug_assert_eq!(boundary_node_idx, BOUNDARY_NODE_IDX);
-        subnet[boundary_node_idx].agent_name = rule_src.to_owned(); // TODO: Use only active pair
         subnet[boundary_node_idx].ports = (0 .. external_ports.len())
           .map(|port_idx| NodePort { node_idx: BOUNDARY_NODE_IDX, port_idx })
           .collect_vec()

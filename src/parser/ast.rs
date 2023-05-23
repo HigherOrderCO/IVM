@@ -358,18 +358,17 @@ impl ValidatedAst {
     // Create root node with one port
     let root_node_idx = net.new_node(ROOT_AGENT_ID, 1);
     debug_assert_eq!(root_node_idx, ROOT_NODE_IDX);
-    net[root_node_idx].agent_name = ROOT_PORT_NAME.to_string();
     let root_port = port(root_node_idx, 0);
 
     // The root node is the only external link ("free variable") in the `init` connections
-    let external_links = vec![[Err(ROOT_PORT_NAME), Ok(root_port)]];
+    let external_ports = vec![[Err(ROOT_PORT_NAME), Ok(root_port)]];
 
-    net.add_connections(&ast.init.val, external_links, &agent_name_to_id);
+    net.add_connections(&ast.init.val, external_ports, &agent_name_to_id);
 
     if cfg!(debug_assertions) {
       net.validate();
     }
-    INetProgram { net, ast, rule_book, agent_name_to_id }
+    INetProgram::new(ast, net, rule_book, agent_name_to_id)
   }
 }
 

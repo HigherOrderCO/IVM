@@ -30,8 +30,6 @@ pub struct Node {
 
   /// 0: principal port
   pub ports: PortVec,
-
-  pub agent_name: AgentName,
 }
 
 /// A port in the INet
@@ -88,7 +86,6 @@ impl INet {
     let node = &mut self[node_idx];
     node.used = false;
     node.ports.clear();
-    node.agent_name.clear();
 
     self.free_nodes.push(node_idx);
   }
@@ -162,11 +159,9 @@ impl INet {
     match connector {
       Connector::Agent(agent) => {
         // Create agent node
-        let agent_name = agent.agent.clone();
         let Agent { agent, ports } = agent;
         let agent_id = agent_name_to_id[agent];
         let node_idx = self.new_node(agent_id, 1 + ports.len());
-        self[node_idx].agent_name = agent_name;
 
         for (i, port_name) in ports.iter().enumerate() {
           let port = port(node_idx, 1 + i); // +1 to skip principal port
@@ -356,7 +351,6 @@ impl INet {
           // which allows us to rewrite the active pair by assuming there are no self-links.
           // We link port 0 of TMP to src and port 1 of TMP to dst, to split the shared wire.
           let intermediary = self.new_node(INTERMEDIARY_AGENT_ID, 2);
-          self[intermediary].agent_name = format!("TMP: {src} ~ {dst}");
           let src = port(node_idx, port_idx);
           self.link(src, port(intermediary, 0));
           self.link(dst, port(intermediary, 1));
@@ -441,7 +435,6 @@ impl INet {
 
       // Create a new node in `self` for each node in `subnet`
       let node_idx = self.new_node(node.agent_id, node.ports.len());
-      self[node_idx].agent_name = node.agent_name.clone();
 
       node_idx
     }));
@@ -536,7 +529,7 @@ impl INet {
   }
 
   /// Read back reduced net into textual form
-  pub fn read_back(&self) -> Vec<Connection> {
+  pub fn read_back(&self, agent_id_to_name: &HashMap<AgentId, AgentName>) -> Vec<Connection> {
     // Helper function to generate new unique port names
     let mut new_port_name = {
       let mut next_port_idx = 0;
@@ -570,6 +563,7 @@ impl INet {
           /// If the port is an aux port, the connector is a `Port`.
           fn build_connector_from_port(
             net: &INet,
+            agent_id_to_name: &HashMap<AgentId, AgentName>,
             node_idx_to_agent_port_names: &mut HashMap<NodeIdx, Vec<PortName>>,
             mut new_port_name: impl FnMut() -> String,
             node_port: NodePort,
@@ -588,7 +582,7 @@ impl INet {
                 Connector::Port(ROOT_PORT_NAME.to_string())
               } else {
                 Connector::Agent(Agent {
-                  agent: node.agent_name.clone(),
+                  agent: agent_id_to_name[&node.agent_id].clone(),
                   ports: agent_aux_port_names.clone(),
                 })
               }
@@ -599,8 +593,20 @@ impl INet {
           }
 
           // For each link src ~ dst, we create a `Connection`
-          let src = build_connector_from_port(self, &mut nodes_aux_port_names, &mut new_port_name, src);
-          let dst = build_connector_from_port(self, &mut nodes_aux_port_names, &mut new_port_name, dst);
+          let src = build_connector_from_port(
+            self,
+            agent_id_to_name,
+            &mut nodes_aux_port_names,
+            &mut new_port_name,
+            src,
+          );
+          let dst = build_connector_from_port(
+            self,
+            agent_id_to_name,
+            &mut nodes_aux_port_names,
+            &mut new_port_name,
+            dst,
+          );
           connections.push(Connection::new(src, dst));
         }
       }
