@@ -96,7 +96,7 @@ impl INet {
   }
 
   /// Mutually link ports
-  pub fn link(&mut self, a: NodePort, b: NodePort) {
+  fn link(&mut self, a: NodePort, b: NodePort) {
     self[a] = b;
     self[b] = a;
   }
@@ -104,7 +104,10 @@ impl INet {
   /// Validate the inet, panics if invalid, useful for debugging/tests
   /// If an INet generated from a valid AST fails validation, it'd be a bug
   pub fn validate(&self) {
-    // println!("validate: {self:#?}");
+    /* if cfg!(test) {
+      eprintln!("validate: {self:#?}");
+    } */
+
     let mut used_node_count = 0;
     let mut contains_boundary_node = false;
     for (node_idx, node) in self.nodes.iter().enumerate() {
@@ -124,10 +127,12 @@ impl INet {
           let src = port(node_idx, port_idx);
           let dst = self[src];
 
-          // eprintln!("{src:?} ~ {dst:?}");
-          assert_eq!(self[dst], src, "\nNon-bidirectional link {:?}:\n{self:#?}", (src, dst));
-
+          /* if cfg!(test) {
+            eprintln!("{src} ~ {dst}");
+          } */
           assert!(self[dst.node_idx].used, "\nUsed node linked to unused node {:?}:\n{self:#?}", (src, dst));
+
+          assert_eq!(self[dst], src, "\nNon-bidirectional link {:?}:\n{self:#?}", (src, dst));
         }
       } else {
         assert_eq!(node.ports, PortVec::default());
@@ -267,7 +272,12 @@ impl INet {
     created_nodes
   }
 
-  // Inserts a rule's RHS sub-net into the net, called by `RuleBook::apply`.
+  // Inserts a rule's RHS sub-net into the net, called by `RuleBook::apply_rewrite_rule`.
+  // It works by:
+  // - Creating nodes in `self` for the `subnet` nodes, to get new node indices
+  // - Copying ports of `subnet` nodes to the new nodes, translating links using new node indices
+  // - Pass-through-linking the boundary node's ports to the corresponding ports in `self`
+  // - Removing the boundary node from `self`
   // `external_ports` is a map from external port indices to ports in the `self` net.
   // External port indices refer to auxiliary ports in the active pair of the rule LHS:
   // E.g. if the rule LHS is `X(a, b) ~ Y(c, d)`, then `external_ports` contains the ports of `self`
@@ -276,14 +286,11 @@ impl INet {
   // So the external ports would be the same if the rule LHS was written as `Y(c, d) ~ X(a, b)`.
   // (Assuming X's AgentId < Y's AgentId in this example.)
   pub fn insert_rule_rhs_subnet(&mut self, subnet: &INet, external_ports: &[NodePort]) -> CreatedNodes {
-    // Copy all fields other than `ports` from `subnet` node to `self` node
-    // and keep track of new node indices
-    // Skip boundary node
+    // Copy fields except `ports` from `subnet` node to `self` node and store new node indices
     // TODO: Reuse Vec
     let mut subnet_node_idx_to_self_node_idx = subnet
       .nodes
       .iter()
-      // .skip(1)
       .map(|node| {
         debug_assert!(node.used); // Rule RHS subnets should have all unused nodes removed
 
@@ -296,64 +303,31 @@ impl INet {
       .collect_vec();
 
     // Copy mapped ports using new node indices
-    // Skip boundary node
-    for (subnet_node, self_node_idx) in
-      subnet.nodes.iter()/* .skip(1) */.zip(&subnet_node_idx_to_self_node_idx)
-    {
+    for (subnet_node, self_node_idx) in subnet.nodes.iter().zip(&subnet_node_idx_to_self_node_idx) {
       // TODO: get_unchecked_mut
       let self_node = &mut self[*self_node_idx];
       for (subnet_port, self_port) in subnet_node.ports.iter().zip(self_node.ports.iter_mut()) {
         let NodePort { node_idx: subnet_node_idx, port_idx } = *subnet_port;
-        /* *self_port = if subnet_node_idx == BOUNDARY_NODE_IDX {
-          // Map `port_idx` to external port in `self`
-          // TODO: get_unchecked
-          external_ports[port_idx]
-          // TODO: Start external port indices at 1 to avoid confusion with principal port?
-        } else {
-          // Map `node_idx` from `subnet` to `self`
-          // TODO: get_unchecked
-          NodePort { node_idx: subnet_node_idx_to_self_node_idx[subnet_node_idx], port_idx }
-        }; */
-        // *self_port = NodePort { node_idx: subnet_node_idx_to_self_node_idx[subnet_node_idx - 1], port_idx };
         // Copy `port_idx` unchanged but map `node_idx` from `subnet` to `self`
         *self_port = NodePort { node_idx: subnet_node_idx_to_self_node_idx[subnet_node_idx], port_idx };
       }
     }
 
-    // Transitively link boundary node's ports and then remove it, similar to intermediary nodes in `rewrite`
-    let boundary_node_idx_in_self = subnet_node_idx_to_self_node_idx[BOUNDARY_NODE_IDX];
+    // Pass-through link boundary node's ports and then remove it, like intermediary nodes in `rewrite`
+    // Remove boundary node from list of created nodes
+    let boundary_node_idx_in_self = subnet_node_idx_to_self_node_idx.swap_remove(BOUNDARY_NODE_IDX);
     let boundary_node: &Node = &self[boundary_node_idx_in_self];
     debug_assert_eq!(boundary_node.agent_id, BOUNDARY_AGENT_ID);
     debug_assert_eq!(boundary_node.ports.len(), external_ports.len());
-    for port_idx in 0 .. boundary_node.ports.len() {
-      let target_port = port(boundary_node_idx_in_self, port_idx);
-      let src = external_ports[port_idx];
-      // If `target_port` points to boundary node, we have to link it transitively
-      if target_port.node_idx == boundary_node_idx_in_self {
-        // If this occurs, it means that a wire connects multiple boundary node ports
-        // E.g. in `rule A(e, f) ~ B(g, h) = C(e) ~ g, f ~ h`
-        // The boundary node will have ports [(1, 1), (0, 3), (1, 0), (0, 1)]
-        // The ports whose target `node_idx` is 0 (BOUNDARY_NODE_IDX) refer to the boundary node.
-        // They are self-links of the boundary node, which means two external ports should be linked
-        // rather than linking a port of a subnet node to an external port.
-        // So they have to be treated differently: Since the boundary node will be removed below,
-        // we have to follow the self-link to find the external target port.
-        // Each boundary port should only be processed once. Since we process other boundary node
-        // ports by doing this, we have to avoid processing already linked self-links again later.
-        // We do this by only processing this port if it's less than its target port (`port_idx`).
-        if port_idx < target_port.port_idx {
-          let dst = external_ports[target_port.port_idx];
-          self.link(dst, src);
-        }
-      }
-      let dst = self[target_port];
-      self.link(dst, src);
+    for (port_idx, &ext_port) in external_ports.iter().enumerate() {
+      // Note: `target_port` doesn't necessary point to a former `subnet` node,
+      // if boundary node contains self-links. See `test_boundary_node_self_links`
+      let target_port = self[port(boundary_node_idx_in_self, port_idx)];
+      self.link(ext_port, target_port);
     }
 
-    // Remove boundary node, now that we linked all its ports transitively
+    // Remove boundary node, now that we pass-through-linked all its ports to external ports
     self.free_node(boundary_node_idx_in_self);
-    // Also remove boundary node from list of created nodes
-    subnet_node_idx_to_self_node_idx.swap_remove(BOUNDARY_NODE_IDX);
 
     subnet_node_idx_to_self_node_idx
   }

@@ -220,7 +220,35 @@ fn test_reduce_inet_ctor_res_direct() -> IvmResult<()> {
 }
 
 #[test]
-fn test_reduce_inet_ctor_res_tmp() -> IvmResult<()> {
+fn test_boundary_node_self_links() -> IvmResult<()> {
+  let src = "
+    agent A(a, b)
+    agent B(a, b)
+    agent Res
+    agent BoundaryPort1
+    agent BoundaryPort3
+
+    // The boundary node will have self-links: [(0, 2), (0, 3), (0, 0), (0, 1)]
+    rule A(e, f) ~ B(g, h) = e ~ g, f ~ h
+
+    init A(root, BoundaryPort1) ~ B(j, BoundaryPort3), j ~ Res
+  ";
+  let ast = Ast::parse(src)?;
+  let ast = ast.validate(src)?;
+  let mut program = ast.into_inet_program();
+  for step in 0 .. {
+    let result = program.read_back();
+    eprintln!("{step:2}: {result}");
+    if !program.net.scan_active_pairs_and_reduce_step(&program.rule_book) {
+      assert_eq!(result, "root ~ Res, BoundaryPort1 ~ BoundaryPort3");
+      break;
+    }
+  }
+  Ok(())
+}
+
+#[test]
+fn test_reduce_inet_link_pair_intermediary() -> IvmResult<()> {
   let src = "
     agent A(a, b)
     agent B(a, b)
