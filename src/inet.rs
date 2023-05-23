@@ -49,6 +49,7 @@ impl fmt::Display for NodePort {
 }
 
 /// Construct a NodePort that can be used to index into INet
+#[inline(always)]
 pub fn port(node_idx: NodeIdx, port_idx: PortIdx) -> NodePort {
   NodePort { node_idx, port_idx }
 }
@@ -76,11 +77,7 @@ impl INet {
     let node = &mut self[node_idx];
     node.used = true;
     node.agent_id = agent_id;
-
-    // TODO: Optimize mem allocs, clear instead of overwrite
-    node.ports = vec![Default::default(); port_count].into();
-    // node.ports.clear();
-    // node.ports.resize(port_count, Default::default());
+    node.ports.resize(port_count, Default::default());
 
     node_idx
   }
@@ -88,10 +85,10 @@ impl INet {
   /// Make node available for reuse
   #[inline(always)]
   pub fn free_node(&mut self, node_idx: NodeIdx) {
-    // self[node_idx] = Default::default(); // TODO: Optimize mem allocs, clear instead of overwrite
     let node = &mut self[node_idx];
     node.used = false;
     node.ports.clear();
+    node.agent_name.clear();
 
     self.free_nodes.push(node_idx);
   }
@@ -111,14 +108,15 @@ impl INet {
     } */
 
     let mut used_node_count = 0;
-    let mut contains_boundary_node = false;
+    let mut contains_used_boundary_node = false;
+    let mut contains_unused_nodes = false;
     for (node_idx, node) in self.nodes.iter().enumerate() {
       if node.used {
         used_node_count += 1;
 
-        let is_boundary_node = node_idx == BOUNDARY_NODE_IDX;
+        let is_boundary_node = node.agent_id == BOUNDARY_AGENT_ID;
         if is_boundary_node {
-          contains_boundary_node = true;
+          contains_used_boundary_node = true;
         }
 
         if !is_boundary_node {
@@ -137,11 +135,14 @@ impl INet {
           assert_eq!(self[dst], src, "\nNon-bidirectional link {:?}:\n{self:#?}", (src, dst));
         }
       } else {
+        contains_unused_nodes = true;
         assert_eq!(node.ports, PortVec::default());
         assert!(self.free_nodes.contains(&node_idx), "\n{self:#?}");
       }
     }
-    if !contains_boundary_node {
+    if contains_used_boundary_node {
+      assert!(!contains_unused_nodes, "Rule RHS subnet must have all unused nodes removed:\n{self:#?}");
+    } else {
       assert!(used_node_count >= 2, "Interaction net has {used_node_count} < 2 nodes:\n{self:#?}");
     }
   }
@@ -155,7 +156,7 @@ impl INet {
     connector: &'b Connector,
     deferred_port_links: &'a mut MaybeLinkedPorts<'b>,
     agent_name_to_id: &HashMap<AgentName, AgentId>,
-    created_nodes: &mut CreatedNodeIndices,
+    created_nodes: &mut NodeIndices,
   ) -> MaybeLinkedPort<'b> {
     match connector {
       Connector::Agent(agent) => {
@@ -197,7 +198,7 @@ impl INet {
     connections: &'a [Connection],
     external_ports: MaybeLinkedPorts<'a>,
     agent_name_to_id: &HashMap<AgentName, AgentId>,
-  ) -> CreatedNodeIndices {
+  ) -> NodeIndices {
     /// Follow connections to find the target of a `port_name` that it resolves to.
     /// Returns `Ok(port)` if the target port could be found, `Err(port_name)` otherwise.
     /// Connections are removed (consumed) from `deferred_port_links` as they are followed.
@@ -298,7 +299,7 @@ impl INet {
 
     // Copy fields except `ports` from `subnet` node to `self` node and store new node indices
     subnet_node_idx_to_self_node_idx.extend(subnet.nodes.iter().map(|node| {
-      debug_assert!(node.used); // Rule RHS subnets should have all unused nodes removed
+      debug_assert!(node.used); // Rule RHS subnet must have all unused nodes removed
 
       // Create a new node in `self` for each node in `subnet`
       let node_idx = self.new_node(node.agent_id, node.ports.len());
@@ -609,28 +610,28 @@ impl INet {
 
 /// Reuseable memory between rewrites, to avoid unnecessary allocations
 #[derive(Default)]
-pub struct ReuseableRewriteData {
-  pub inet_active_pair_candidate_nodes: Vec<NodeIdx>,
-  pub inet_intermediary_nodes: Vec<NodeIdx>,
-  pub subnet: ReuseableSubnetData,
-  pub inet_new_active_pairs_created_by_rewrite: ActivePairs,
+struct ReuseableRewriteData {
+  inet_active_pair_candidate_nodes: Vec<NodeIdx>,
+  inet_intermediary_nodes: Vec<NodeIdx>,
+  subnet: ReuseableSubnetData,
+  inet_new_active_pairs_created_by_rewrite: ActivePairs,
 }
 
 /// Separate sub-borrowable struct to pass to `RuleBook::apply_rewrite_rule`
 #[derive(Default)]
 pub struct ReuseableSubnetData {
   pub rule_book_external_ports: Vec<NodePort>,
-  pub inet_subnet_node_idx_to_self_node_idx: CreatedNodeIndices,
+  inet_subnet_node_idx_to_self_node_idx: NodeIndices,
 }
 
 impl ReuseableRewriteData {
   // When no rule matched, only the first two fields were populated
-  pub fn clear_when_no_rule_matched(&mut self) {
+  fn clear_when_no_rule_matched(&mut self) {
     self.inet_active_pair_candidate_nodes.clear();
     self.inet_intermediary_nodes.clear();
   }
 
-  pub fn clear(&mut self) {
+  fn clear(&mut self) {
     self.inet_active_pair_candidate_nodes.clear();
     self.inet_intermediary_nodes.clear();
     self.subnet.rule_book_external_ports.clear();
@@ -638,9 +639,6 @@ impl ReuseableRewriteData {
     self.inet_new_active_pairs_created_by_rewrite.clear();
   }
 }
-
-/// Represents the nodes created by a rewrite (when `RuleBook::apply_rewrite_rule` calls `INet::add_connections`)
-pub type CreatedNodeIndices = Vec<NodeIdx>;
 
 /// Represents a connection between two ports for deferred linking
 /// Either Ok(port) or Err(port_name) which needs to be looked up later
@@ -650,19 +648,21 @@ type MaybeLinkedPorts<'a> = Vec<[MaybeLinkedPort<'a>; 2]>;
 /// Represents active pairs of nodes in a net
 type ActivePairs = Vec<(NodeIdx, NodeIdx)>;
 
+type NodeIndices = Vec<NodeIdx>;
+
 // Indexing utils to allow indexing an INet with a NodeIdx and NodePort
 
 impl Index<NodeIdx> for INet {
   type Output = Node;
 
   fn index(&self, idx: NodeIdx) -> &Self::Output {
-    &self.nodes[idx]
+    if cfg!(debug_assertions) { &self.nodes[idx] } else { unsafe { self.nodes.get_unchecked(idx) } }
   }
 }
 
 impl IndexMut<NodeIdx> for INet {
   fn index_mut(&mut self, idx: NodeIdx) -> &mut Self::Output {
-    &mut self.nodes[idx]
+    if cfg!(debug_assertions) { &mut self.nodes[idx] } else { unsafe { self.nodes.get_unchecked_mut(idx) } }
   }
 }
 
@@ -670,13 +670,13 @@ impl Index<PortIdx> for Node {
   type Output = NodePort;
 
   fn index(&self, idx: PortIdx) -> &Self::Output {
-    &self.ports[idx]
+    if cfg!(debug_assertions) { &self.ports[idx] } else { unsafe { self.ports.get_unchecked(idx) } }
   }
 }
 
 impl IndexMut<PortIdx> for Node {
   fn index_mut(&mut self, idx: PortIdx) -> &mut Self::Output {
-    &mut self.ports[idx]
+    if cfg!(debug_assertions) { &mut self.ports[idx] } else { unsafe { self.ports.get_unchecked_mut(idx) } }
   }
 }
 
