@@ -56,9 +56,6 @@ cargo test
 - Readback without storing agent names in nodes, map `agent_id` to `agent_name` for readback
 - Using `smallvec` for `Node` ports to reduce heap allocations
 - Eliminate memory allocations during rewrites
-    - Optimize rule book by using agent/port ids instead of names in `RuleRhs::connections`
-    - `RuleBook::apply`: Don't do port lookup by name, and don't allocate a HashMap every time
-    - `INet::rewrite`: Reuse memory for `new_active_pairs`, `intermediary_nodes` etc.
 - When determining newly created active pairs after a rewrite, don't look at all nodes created by rewritten sub-net for determining new active pairs:
     - Pre-reduce RHS of rules so that sub-net created by rewrite cannot contain active pairs in its interior, there can be only new active pairs on its boundary links to neighbor nodes
         - Only look at agents adjacent to rewritten sub-net for determining new active pairs

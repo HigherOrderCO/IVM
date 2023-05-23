@@ -6,7 +6,6 @@ use crate::{
   util::sort_tuple,
 };
 use hashbrown::HashMap;
-use itertools::Itertools;
 use smallvec::SmallVec;
 use std::{
   collections::VecDeque,
@@ -63,6 +62,7 @@ pub struct INet {
 
 impl INet {
   /// Allocate a new node
+  #[inline(always)]
   pub fn new_node(&mut self, agent_id: AgentId, port_count: usize) -> NodeIdx {
     let node_idx = match self.free_nodes.pop() {
       Some(node_idx) => node_idx,
@@ -86,6 +86,7 @@ impl INet {
   }
 
   /// Make node available for reuse
+  #[inline(always)]
   pub fn free_node(&mut self, node_idx: NodeIdx) {
     // self[node_idx] = Default::default(); // TODO: Optimize mem allocs, clear instead of overwrite
     let node = &mut self[node_idx];
@@ -96,6 +97,7 @@ impl INet {
   }
 
   /// Mutually link ports
+  #[inline(always)]
   fn link(&mut self, a: NodePort, b: NodePort) {
     self[a] = b;
     self[b] = a;
@@ -153,7 +155,7 @@ impl INet {
     connector: &'b Connector,
     deferred_port_links: &'a mut MaybeLinkedPorts<'b>,
     agent_name_to_id: &HashMap<AgentName, AgentId>,
-    created_nodes: &mut CreatedNodes,
+    created_nodes: &mut CreatedNodeIndices,
   ) -> MaybeLinkedPort<'b> {
     match connector {
       Connector::Agent(agent) => {
@@ -186,15 +188,16 @@ impl INet {
   /// during a rewrite. `external_ports` is a map from port names to ports in the parent net.
   /// When creating a net from scratch (in `ValidatedAst::into_inet_program`),
   /// `external_ports` only contains the `root` port.
-  /// When called by `RuleBook::apply`, `external_ports` contains the ports of the parent net that
-  /// the rule's RHS sub-net is connected to, based on which INet ports the rule's LHS (active pair)
+  /// When called by `RuleBook::apply_rewrite_rule`, `external_ports` contains the ports of the parent net
+  /// that the rule's RHS sub-net is connected to, based on which INet ports the rule's LHS (active pair)
   /// aux port names map to, in that context of the local rewrite.
+  /// Returns the indices of the created nodes.
   pub fn add_connections<'a>(
     &mut self,
     connections: &'a [Connection],
     external_ports: MaybeLinkedPorts<'a>,
     agent_name_to_id: &HashMap<AgentName, AgentId>,
-  ) -> CreatedNodes {
+  ) -> CreatedNodeIndices {
     /// Follow connections to find the target of a `port_name` that it resolves to.
     /// Returns `Ok(port)` if the target port could be found, `Err(port_name)` otherwise.
     /// Connections are removed (consumed) from `deferred_port_links` as they are followed.
@@ -272,38 +275,40 @@ impl INet {
     created_nodes
   }
 
-  // Inserts a rule's RHS sub-net into the net, called by `RuleBook::apply_rewrite_rule`.
-  // It works by:
-  // - Creating nodes in `self` for the `subnet` nodes, to get new node indices
-  // - Copying ports of `subnet` nodes to the new nodes, translating links using new node indices
-  // - Pass-through-linking the boundary node's ports to the corresponding ports in `self`
-  // - Removing the boundary node from `self`
-  // `external_ports` is a map from external port indices to ports in the `self` net.
-  // External port indices refer to auxiliary ports in the active pair of the rule LHS:
-  // E.g. if the rule LHS is `X(a, b) ~ Y(c, d)`, then `external_ports` contains the ports of `self`
-  // that map to `[a, b, c, d]` (in that order) in the context of the local rewrite.
-  // In other words, the ports are indexed left-to-right, after ordering both active pair agent IDs:
-  // So the external ports would be the same if the rule LHS was written as `Y(c, d) ~ X(a, b)`.
-  // (Assuming X's AgentId < Y's AgentId in this example.)
-  pub fn insert_rule_rhs_subnet(&mut self, subnet: &INet, external_ports: &[NodePort]) -> CreatedNodes {
+  /// Inserts a rule's RHS sub-net into the net, called by `RuleBook::apply_rewrite_rule`.
+  /// It works by:
+  /// - Creating nodes in `self` for the `subnet` nodes, to get new node indices
+  /// - Copying ports of `subnet` nodes to the new nodes, translating links using new node indices
+  /// - Pass-through-linking the boundary node's ports to the corresponding ports in `self`
+  /// - Removing the boundary node from `self`
+  /// `external_ports` is a map from external port indices to ports in the `self` net.
+  /// External port indices refer to auxiliary ports in the active pair of the rule LHS:
+  /// E.g. if the rule LHS is `X(a, b) ~ Y(c, d)`, then `external_ports` contains the ports of `self`
+  /// that map to `[a, b, c, d]` (in that order) in the context of the local rewrite.
+  /// In other words, the ports are indexed left-to-right, after ordering both active pair agent IDs:
+  /// So the external ports would be the same if the rule LHS was written as `Y(c, d) ~ X(a, b)`.
+  /// (Assuming X's AgentId < Y's AgentId in this example.)
+  /// This function assumes that `reuse.subnet_node_idx_to_self_node_idx` is empty
+  /// and that `reuse.rule_book_external_ports` contains the external ports of the subnet.
+  /// When this function returns, `reuse.inet_subnet_node_idx_to_self_node_idx` contains the node indices
+  /// of the inserted subnet nodes, to enable `rewrite_active_pair` to determine new active pairs.
+  pub fn insert_rule_rhs_subnet(&mut self, subnet: &INet, reuse: &mut ReuseableSubnetData) {
+    let external_ports = &reuse.rule_book_external_ports;
+    let subnet_node_idx_to_self_node_idx = &mut reuse.inet_subnet_node_idx_to_self_node_idx;
+
     // Copy fields except `ports` from `subnet` node to `self` node and store new node indices
-    // TODO: Reuse Vec
-    let mut subnet_node_idx_to_self_node_idx = subnet
-      .nodes
-      .iter()
-      .map(|node| {
-        debug_assert!(node.used); // Rule RHS subnets should have all unused nodes removed
+    subnet_node_idx_to_self_node_idx.extend(subnet.nodes.iter().map(|node| {
+      debug_assert!(node.used); // Rule RHS subnets should have all unused nodes removed
 
-        // Create a new node in `self` for each node in `subnet`
-        let node_idx = self.new_node(node.agent_id, node.ports.len());
-        self[node_idx].agent_name = node.agent_name.clone();
+      // Create a new node in `self` for each node in `subnet`
+      let node_idx = self.new_node(node.agent_id, node.ports.len());
+      self[node_idx].agent_name = node.agent_name.clone();
 
-        node_idx
-      })
-      .collect_vec();
+      node_idx
+    }));
 
     // Copy mapped ports using new node indices
-    for (subnet_node, self_node_idx) in subnet.nodes.iter().zip(&subnet_node_idx_to_self_node_idx) {
+    for (subnet_node, self_node_idx) in subnet.nodes.iter().zip(&*subnet_node_idx_to_self_node_idx) {
       // TODO: get_unchecked_mut
       let self_node = &mut self[*self_node_idx];
       for (subnet_port, self_port) in subnet_node.ports.iter().zip(self_node.ports.iter_mut()) {
@@ -313,7 +318,7 @@ impl INet {
       }
     }
 
-    // Pass-through link boundary node's ports and then remove it, like intermediary nodes in `rewrite`
+    // Pass-through link boundary node's ports and then remove it, like intermediary nodes in `rewrite_active_pair`
     // Remove boundary node from list of created nodes
     let boundary_node_idx_in_self = subnet_node_idx_to_self_node_idx.swap_remove(BOUNDARY_NODE_IDX);
     let boundary_node: &Node = &self[boundary_node_idx_in_self];
@@ -328,8 +333,6 @@ impl INet {
 
     // Remove boundary node, now that we pass-through-linked all its ports to external ports
     self.free_node(boundary_node_idx_in_self);
-
-    subnet_node_idx_to_self_node_idx
   }
 
   /// Remove all unused nodes
@@ -373,10 +376,17 @@ impl INet {
     active_pairs
   }
 
-  /// Rewrite active pair using rule book
-  /// Returns new active pairs that were created during the rewrite
-  /// Returns None if active pair could not be rewritten because there was no matching rule
-  fn rewrite(&mut self, (a, b): (NodeIdx, NodeIdx), rule_book: &RuleBook) -> Option<ActivePairs> {
+  /// Rewrite active pair using rule book.
+  /// Assumes that reuse buffers are empty.
+  /// Returns `false` if active pair could not be rewritten because there was no matching rule
+  /// Returns `true` when a rule matched and a rewrite happened, in that case
+  /// `reuse.inet_new_active_pairs_created_by_rewrite` contains the new active pairs.
+  fn rewrite_active_pair(
+    &mut self,
+    (a, b): (NodeIdx, NodeIdx),
+    rule_book: &RuleBook,
+    reuse: &mut ReuseableRewriteData,
+  ) -> bool {
     debug_assert!(
       self[port(a, 0)] == port(b, 0) && self[port(b, 0)] == port(a, 0),
       "Expected active pair: {:?}\n{self:#?}",
@@ -395,41 +405,35 @@ impl INet {
     // (Also note that we don't have to dedup A's and B's candidates, because each node
     // can only be a candidate once because it only has one principal port.)
     // After the rewrite, we add the nodes as candidates that were created during the rewrite.
-    let active_pair_candidate_nodes = self[a]
-      .ports
-      .iter()
-      .skip(1)
-      .chain(self[b].ports.iter().skip(1))
-      .filter(|port| port.port_idx == 0)
-      .map(|port| port.node_idx)
-      .collect::<Vec<_>>();
+    let active_pair_candidate_nodes = &mut reuse.inet_active_pair_candidate_nodes;
+    active_pair_candidate_nodes.extend(
+      self[a]
+        .ports
+        .iter()
+        .skip(1)
+        .chain(self[b].ports.iter().skip(1))
+        .filter(|port| port.port_idx == 0)
+        .map(|port| port.node_idx),
+    );
 
-    /*
-    The rewrite mechanism assumes that all wires between aux ports of the active pair
-    and the rest of the net are unique. E.g. `A(a, a) ~ B` or `A(a) ~ B(a)` would be a problem.
-    Our workaround: If the active pair contains two references to the same wire,
-    we split the wire into two, by inserting a temporary intermediary node:
-    E.g. `A(a, a) ~ B` becomes `A(a, b) ~ B, a ~ TMP(b)`
-    E.g. `A(a) ~ B(a)` becomes `A(a) ~ B(b), a ~ TMP(b)`
-    This is done by adding an intermediary node with two ports, one of which is linked to each
-    of the two aux ports that were previously using the same wire (like a wire going through it).
-    Then the rewrite is performed as usual, and afterwards the two ports of the intermediary
-    node are linked together and the intermediary node is removed.
-    */
+    // The rewrite mechanism assumes that all wires between aux ports of the active pair
+    // and the rest of the net are unique. E.g. `A(a, a) ~ B` or `A(a) ~ B(a)` would be a problem.
+    // Our workaround: If the active pair contains two references to the same wire,
+    // we split the wire into two, by inserting a temporary intermediary node:
+    // E.g. `A(a, a) ~ B` becomes `A(a, b) ~ B, a ~ TMP(b)`
+    // E.g. `A(a) ~ B(a)` becomes `A(a) ~ B(b), a ~ TMP(b)`
+    // This is done by adding an intermediary node with two ports, one of which is linked to each
+    // of the two aux ports that were previously using the same wire (like a wire going through it).
+    // Then the rewrite is performed as usual, and afterwards the two ports of the intermediary
+    // node are linked together and the intermediary node is removed.
     const INTERMEDIARY_AGENT_ID: AgentId = usize::MAX;
-    let mut intermediary_nodes = vec![];
+    let intermediary_nodes = &mut reuse.inet_intermediary_nodes;
     for node_idx in [a, b] {
-      // for port_idx in 0 .. self[node_idx].ports.len() {
       // Skip principal port
       for port_idx in 1 .. self[node_idx].ports.len() {
         let src = port(node_idx, port_idx);
         let dst = self[src];
         if dst.node_idx == a || dst.node_idx == b {
-          /* debug_assert_ne!(
-            dst.port_idx, 0,
-            "Principal port of active pair member cannot be linked to aux port"
-          ); */
-
           // Create intermediary node that will be removed after rewrite. It temporarily converts
           // the problematic self-link of the active pair into a link to another node,
           // which allows us to rewrite the active pair by assuming there are no self-links.
@@ -445,11 +449,11 @@ impl INet {
     }
 
     // Apply rewrite rule to active pair if there is a matching rule
-    let rule_application_result = rule_book.apply_rewrite_rule(self, (a, b));
+    let rewrite_happened = rule_book.apply_rewrite_rule(self, (a, b), &mut reuse.subnet);
 
     // Now that the rewrite is done (or no rewrite happened if there was no applicable rule),
     // we can remove the intermediary nodes and link their two wires together into one again.
-    for node_idx in intermediary_nodes {
+    for &node_idx in &*intermediary_nodes {
       let node = &self[node_idx];
       let src = node[0];
       let dst = node[1];
@@ -457,52 +461,51 @@ impl INet {
       self.free_node(node_idx);
     }
 
-    let new_active_pairs = if let Some(created_nodes) = rule_application_result {
+    if rewrite_happened {
+      let created_nodes = &reuse.subnet.inet_subnet_node_idx_to_self_node_idx;
+
       // Remove the nodes of the active pair that was rewritten
       self.free_node(a);
       self.free_node(b);
 
       // Add nodes created by rewrite as candidates for new active pairs.
       // There are no duplicates in this chained iter, because these sets are disjoint
-      let active_pair_candidate_nodes = active_pair_candidate_nodes.into_iter().chain(created_nodes);
+      let active_pair_candidate_nodes = active_pair_candidate_nodes.iter().chain(created_nodes);
 
       // Check which of the candidates actually form active pairs.
       // Sort each pair of node indices so that we can dedup them.
       // Sort the list of pairs so that we can dedup them.
-      let new_active_pairs = active_pair_candidate_nodes
-        .filter_map(|node_idx| {
-          debug_assert!(self[node_idx].used, "Node {node_idx} is not used: {:#?}", self[node_idx]);
-          self.node_is_part_of_active_pair(node_idx).map(|dst_node_idx| {
-            debug_assert!(
-              self[dst_node_idx].used,
-              "Node {dst_node_idx} is not used: {:#?}",
-              self[dst_node_idx]
-            );
-            sort_tuple((node_idx, dst_node_idx))
-          })
+      let new_active_pairs = &mut reuse.inet_new_active_pairs_created_by_rewrite;
+      new_active_pairs.extend(active_pair_candidate_nodes.filter_map(|&node_idx| {
+        debug_assert!(self[node_idx].used, "Node {node_idx} is not used: {:#?}", self[node_idx]);
+        self.node_is_part_of_active_pair(node_idx).map(|dst_node_idx| {
+          debug_assert!(
+            self[dst_node_idx].used,
+            "Node {dst_node_idx} is not used: {:#?}",
+            self[dst_node_idx]
+          );
+          sort_tuple((node_idx, dst_node_idx))
         })
-        .sorted()
-        .dedup()
-        .collect_vec();
-      Some(new_active_pairs)
-    } else {
-      None // No rewrite happened, so no new active pairs came into existence
+      }));
+      new_active_pairs.sort();
+      new_active_pairs.dedup();
     };
 
     if cfg!(debug_assertions) {
       self.validate();
     }
-    new_active_pairs
+    rewrite_happened
   }
 
   /// Perform one reduction step:
   /// Scan for active pairs and rewrite the first one for which a rule exists.
-  /// Returns true if a rewrite happened, false otherwise (either because
+  /// Returns `true` if a rewrite happened, false otherwise (either because
   /// there are no active pairs or because no rule applies to any of them).
   /// Not efficient because of the rescan for active pairs, but useful for debugging.
   pub fn scan_active_pairs_and_reduce_step(&mut self, rule_book: &RuleBook) -> bool {
+    let mut reuse = ReuseableRewriteData::default();
     for active_pair in self.scan_active_pairs() {
-      if self.rewrite(active_pair, rule_book).is_some() {
+      if self.rewrite_active_pair(active_pair, rule_book, &mut reuse) {
         return true;
       }
     }
@@ -513,14 +516,18 @@ impl INet {
   /// Only scans the net for active pairs in the beginning. After each rewrite, new active pairs are found by
   /// checking the nodes involved in and adjacent to the rewritten sub-net.
   pub fn reduce(&mut self, rule_book: &RuleBook) -> usize {
+    let mut reuse = ReuseableRewriteData::default();
     let mut reduction_count = 0;
     let mut active_pairs = VecDeque::from(self.scan_active_pairs());
     // `active_pairs` is a queue, we process active pairs in the order they were found:
     // Pop from the front while the queue is not empty, and push new active pairs to the back.
     while let Some(active_pair) = active_pairs.pop_front() {
-      if let Some(new_active_pairs_created_by_rewrite) = self.rewrite(active_pair, rule_book) {
-        active_pairs.extend(new_active_pairs_created_by_rewrite);
+      if self.rewrite_active_pair(active_pair, rule_book, &mut reuse) {
+        active_pairs.extend(&reuse.inet_new_active_pairs_created_by_rewrite);
         reduction_count += 1;
+        reuse.clear();
+      } else {
+        reuse.clear_when_no_rule_matched();
       }
     }
     reduction_count
@@ -600,8 +607,40 @@ impl INet {
   }
 }
 
-/// Represents the nodes created by a rewrite (when `RuleBook::apply` calls `INet::add_connections`)
-pub type CreatedNodes = Vec<NodeIdx>;
+/// Reuseable memory between rewrites, to avoid unnecessary allocations
+#[derive(Default)]
+pub struct ReuseableRewriteData {
+  pub inet_active_pair_candidate_nodes: Vec<NodeIdx>,
+  pub inet_intermediary_nodes: Vec<NodeIdx>,
+  pub subnet: ReuseableSubnetData,
+  pub inet_new_active_pairs_created_by_rewrite: ActivePairs,
+}
+
+/// Separate sub-borrowable struct to pass to `RuleBook::apply_rewrite_rule`
+#[derive(Default)]
+pub struct ReuseableSubnetData {
+  pub rule_book_external_ports: Vec<NodePort>,
+  pub inet_subnet_node_idx_to_self_node_idx: CreatedNodeIndices,
+}
+
+impl ReuseableRewriteData {
+  // When no rule matched, only the first two fields were populated
+  pub fn clear_when_no_rule_matched(&mut self) {
+    self.inet_active_pair_candidate_nodes.clear();
+    self.inet_intermediary_nodes.clear();
+  }
+
+  pub fn clear(&mut self) {
+    self.inet_active_pair_candidate_nodes.clear();
+    self.inet_intermediary_nodes.clear();
+    self.subnet.rule_book_external_ports.clear();
+    self.subnet.inet_subnet_node_idx_to_self_node_idx.clear();
+    self.inet_new_active_pairs_created_by_rewrite.clear();
+  }
+}
+
+/// Represents the nodes created by a rewrite (when `RuleBook::apply_rewrite_rule` calls `INet::add_connections`)
+pub type CreatedNodeIndices = Vec<NodeIdx>;
 
 /// Represents a connection between two ports for deferred linking
 /// Either Ok(port) or Err(port_name) which needs to be looked up later

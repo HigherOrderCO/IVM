@@ -1,6 +1,6 @@
 use crate::{
   error::ProgramErrors,
-  inet::{CreatedNodes, INet, NodeIdx, NodePort},
+  inet::{INet, NodeIdx, NodePort, ReuseableSubnetData},
   parser::ast::{ActivePair, AgentName, Rule},
   util::sort_tuples_by_fst,
 };
@@ -102,9 +102,16 @@ impl RuleBook {
     }
   }
 
-  /// Apply rule to active pair if such a rule exists
-  /// Returns indices of created nodes if a rule was applied, None otherwise
-  pub fn apply_rewrite_rule(&self, net: &mut INet, active_pair: (NodeIdx, NodeIdx)) -> Option<CreatedNodes> {
+  /// Apply rule to active pair if such a rule exists.
+  /// Assumes that `reuse.rule_book_external_ports` is empty.
+  /// Returns `true` if a rule was applied, in that case `reuse.inet_subnet_node_idx_to_self_node_idx`
+  /// contains the node indices of the inserted subnet nodes.
+  pub fn apply_rewrite_rule(
+    &self,
+    net: &mut INet,
+    active_pair: (NodeIdx, NodeIdx),
+    reuse: &mut ReuseableSubnetData,
+  ) -> bool {
     let (node_idx_lhs, node_idx_rhs) = active_pair;
     let (lhs_node, rhs_node) = (&net[node_idx_lhs], &net[node_idx_rhs]);
     let (lhs_id, rhs_id) = (lhs_node.agent_id, rhs_node.agent_id);
@@ -116,17 +123,13 @@ impl RuleBook {
 
     if let Some(RuleRhs { subnet }) = self.rules.get(&key) {
       // Construct external ports for the rule's RHS sub-net
-      // TODO: Reuse Vec
-      let external_ports = [lhs_node, rhs_node]
-        .into_iter()
-        .flat_map(|node| {
-          node.ports.iter().skip(1).copied() // Skip principal port
-        })
-        .collect_vec();
-      let created_nodes = net.insert_rule_rhs_subnet(subnet, &external_ports);
-      Some(created_nodes)
+      reuse.rule_book_external_ports.extend([lhs_node, rhs_node].into_iter().flat_map(|node| {
+        node.ports.iter().skip(1).copied() // Skip principal port
+      }));
+      net.insert_rule_rhs_subnet(subnet, reuse);
+      true
     } else {
-      None
+      false
     }
   }
 }
