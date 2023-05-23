@@ -225,7 +225,7 @@ impl Ast {
       .collect::<HashMap<AgentName, AgentId>>();
 
     // Validate rules and build rule book
-    let mut rule_book = RuleBook::default();
+    let mut rule_book = RuleBook::new(agent_name_to_id.len());
     for rule in &self.rules {
       /// Reject duplicate port names in agents of active pair
       /// E.g. A(a, a) ~ B is invalid, port names in active pair must be distinct
@@ -302,7 +302,7 @@ impl Ast {
 
       // Add rule to rule book
       if active_pair_agents_exist {
-        rule_book.add_rule(rule, rule_src, &agent_name_to_id, &mut errors);
+        rule_book.insert_rule(rule, rule_src, &agent_name_to_id, &mut errors);
       }
     }
 

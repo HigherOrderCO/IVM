@@ -2,6 +2,7 @@ use crate::{
   error::ProgramErrors,
   inet::{INet, NodeIdx, NodePort, ReuseableSubnetData},
   parser::ast::{ActivePair, AgentName, Rule},
+  rule_map::RuleMap,
   util::sort_tuples_by_fst,
 };
 use chumsky::prelude::Rich;
@@ -21,12 +22,10 @@ pub const ROOT_AGENT_ID: AgentId = 0;
 
 /// Ordered pair of AgentIds represents active pair
 /// So that we only have to store one mapping to cover A ~ B and B ~ A
-type RuleLhs = (AgentId, AgentId);
+pub type RuleLhs = (AgentId, AgentId);
 
 #[derive(Clone)]
-struct RuleRhs {
-  // port_idx_to_name: [Vec<PortName>; 2],
-  // external_ports: Vec<NodePort>, // External ports in the rule's RHS sub-net
+pub struct RuleRhs {
   subnet: INet,
 }
 
@@ -40,14 +39,19 @@ During rule application, the rule RHS sub-net is constructed and external links
 are connected to the corresponding ports in the active pair of the net.
 Currently the ports are linked by name, but this could be changed to use port ids.
 */
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct RuleBook {
-  rules: HashMap<RuleLhs, RuleRhs>,
+  rules: RuleMap,
 }
 
 impl RuleBook {
+  pub fn new(_agent_count: usize) -> Self {
+    Self { rules: RuleMap::new() }
+    // Self { rules: RuleMap::new(agent_count) }
+  }
+
   /// Insert into rule book and check for duplicate rules
-  pub fn add_rule(
+  pub fn insert_rule(
     &mut self,
     rule: &Rule,
     rule_src: &str,
