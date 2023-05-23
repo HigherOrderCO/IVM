@@ -9,3 +9,8 @@ pub mod util;
 
 #[cfg(test)]
 mod tests;
+
+use mimalloc_rust::GlobalMiMalloc;
+
+#[global_allocator]
+static GLOBAL_ALLOC: GlobalMiMalloc = GlobalMiMalloc;
