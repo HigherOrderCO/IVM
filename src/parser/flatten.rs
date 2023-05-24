@@ -1,4 +1,4 @@
-use crate::{inet::EXTERNAL_PORT_PREFIX, parser::ast::*, util::sort_tuple};
+use crate::{parser::ast::*, util::sort_tuple};
 use itertools::Itertools;
 
 // The syntax allows writing nested agents for convenience, this gets flattened during parsing.
@@ -70,7 +70,10 @@ pub(super) fn flatten_connections(connections: Vec<NestedConnection>) -> Vec<Con
 // Unflatten connections, used for reading back computed nets into readable textual form
 // E.g. root ~ Succ(_0), Succ(_1) ~ _2, _1 ~ Zero, Succ(_3) ~ _0, _3 ~ Succ(_2) => root ~ Succ(Succ(Succ(Succ(Zero))))
 // E.g. root ~ Lam(_0, _1), _0 ~ _1 => root ~ Lam(_0, _0)
-pub fn unflatten_connections(connections: Vec<Connection>) -> Vec<NestedConnection> {
+pub fn unflatten_connections(
+  connections: Vec<Connection>,
+  root_port_names: &[PortName],
+) -> Vec<NestedConnection> {
   let mut connections = connections
     .into_iter()
     .map(|connection| {
@@ -198,8 +201,9 @@ pub fn unflatten_connections(connections: Vec<Connection>) -> Vec<NestedConnecti
         let (wire_to_use, wire_to_replace) = sort_tuple((a.clone(), b.clone()));
 
         // If `wire_to_replace` has a protected name, keep it and replace `wire_to_use` with it.
-        // E.g. `root ~ _0` or `ep_0 ~ _0`
-        Some(if wire_to_replace == ROOT_PORT_NAME || wire_to_replace.starts_with(EXTERNAL_PORT_PREFIX) {
+        // E.g. `root ~ _0`, or `a ~ _0` in a rule's RHS sub-net when `a` is the name of an aux port
+        // in the rule's active pair, e.g. `rule Eq(ret, a) ~ Zero = IsZero(ret) ~ _0, a ~ _0`
+        Some(if root_port_names.contains(&wire_to_replace) {
           (i, wire_to_replace, wire_to_use)
         } else {
           (i, wire_to_use, wire_to_replace)

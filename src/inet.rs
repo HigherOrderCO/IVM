@@ -4,7 +4,7 @@ use crate::{
     display::fmt_nested_connections,
     flatten::unflatten_connections,
   },
-  rule_book::{AgentId, RuleBook, BOUNDARY_AGENT_ID, BOUNDARY_NODE_IDX},
+  rule_book::{AgentId, RuleBook, ROOT_AGENT_ID},
   util::sort_tuple,
 };
 use hashbrown::HashMap;
@@ -108,18 +108,18 @@ impl INet {
     } */
 
     let mut used_node_count = 0;
-    let mut contains_used_boundary_node = false;
+    let mut contains_used_root_node = false;
     let mut contains_unused_nodes = false;
     for (node_idx, node) in self.nodes.iter().enumerate() {
       if node.used {
         used_node_count += 1;
 
-        let is_boundary_node = node.agent_id == BOUNDARY_AGENT_ID;
-        if is_boundary_node {
-          contains_used_boundary_node = true;
+        let is_root_node = node.agent_id == ROOT_AGENT_ID;
+        if is_root_node {
+          contains_used_root_node = true;
         }
 
-        if !is_boundary_node {
+        if !is_root_node {
           assert_ne!(node.ports.len(), 0, "Nodes must have at least one port:\n{node:#?}");
         }
 
@@ -140,7 +140,7 @@ impl INet {
         assert!(self.free_nodes.contains(&node_idx), "\n{self:#?}");
       }
     }
-    if contains_used_boundary_node {
+    if contains_used_root_node {
       assert!(
         allow_unused_nodes || !contains_unused_nodes,
         "Rule RHS subnet must have all unused nodes removed:\n{self:#?}"
@@ -417,8 +417,8 @@ impl INet {
   /// It works by:
   /// - Creating nodes in `self` for the `subnet` nodes, to get new node indices
   /// - Copying ports of `subnet` nodes to the new nodes, translating links using new node indices
-  /// - Pass-through-linking the boundary node's ports to the corresponding ports in `self`
-  /// - Removing the boundary node from `self`
+  /// - Pass-through-linking the subnet root node's ports to the corresponding ports in `self`
+  /// - Removing the subnet root node from `self`
   /// `external_ports` is a map from external port indices to ports in the `self` net.
   /// External port indices refer to auxiliary ports in the active pair of the rule LHS:
   /// E.g. if the rule LHS is `X(a, b) ~ Y(c, d)`, then `external_ports` contains the ports of `self`
@@ -455,29 +455,29 @@ impl INet {
       }
     }
 
-    // Pass-through link boundary node's ports and then remove it, like intermediary nodes in `rewrite_active_pair`
-    // Remove boundary node from list of created nodes
-    let boundary_node_idx_in_self = subnet_node_idx_to_self_node_idx.swap_remove(BOUNDARY_NODE_IDX);
-    let boundary_node: &Node = &self[boundary_node_idx_in_self];
-    debug_assert_eq!(boundary_node.agent_id, BOUNDARY_AGENT_ID);
-    debug_assert_eq!(boundary_node.ports.len(), external_ports.len());
+    // Pass-through link subnet root node's ports and then remove it, like temporary nodes in `rewrite_active_pair`
+    // Remove subnet root node from list of created nodes
+    let subnet_root_node_idx_in_self = subnet_node_idx_to_self_node_idx.swap_remove(ROOT_NODE_IDX);
+    let subnet_root_node: &Node = &self[subnet_root_node_idx_in_self];
+    debug_assert_eq!(subnet_root_node.agent_id, ROOT_AGENT_ID);
+    debug_assert_eq!(subnet_root_node.ports.len(), external_ports.len());
     for (port_idx, &ext_port) in external_ports.iter().enumerate() {
       // Note: `target_port` doesn't necessary point to a former `subnet` node,
-      // if boundary node contains self-links. See `test_boundary_node_self_links`
-      let target_port = self[port(boundary_node_idx_in_self, port_idx)];
+      // if subnet root node contains self-links. See `test_subnet_root_node_self_links`
+      let target_port = self[port(subnet_root_node_idx_in_self, port_idx)];
       self.link(ext_port, target_port);
     }
 
-    // Remove boundary node, now that we pass-through-linked all its ports to external ports
-    self.free_node(boundary_node_idx_in_self);
+    // Remove subnet root node, now that we pass-through-linked all its ports to external ports
+    self.free_node(subnet_root_node_idx_in_self);
   }
 
   /// Determines if a given node is part of an active pair and returns the other node in the pair
   fn node_is_part_of_active_pair(&self, node_idx: NodeIdx) -> Option<NodeIdx> {
-    // The only node that can have no ports is the boundary node, e.g. in `rule Era ~ Zero =`
+    // The only node that can have no ports is the subnet root node, e.g. in `rule Era ~ Zero =`
     let node = &self[node_idx];
     if node.ports.is_empty() {
-      debug_assert_eq!(node.agent_id, BOUNDARY_AGENT_ID);
+      debug_assert_eq!(node.agent_id, ROOT_AGENT_ID);
       None
     } else {
       let dst = self[port(node_idx, 0)];
@@ -554,7 +554,11 @@ impl INet {
   }
 
   /// Read back reduced net into textual form raw (unchanged)
-  pub fn read_back_raw(&self, agent_id_to_name: &HashMap<AgentId, AgentName>) -> Vec<Connection> {
+  pub fn read_back_raw(
+    &self,
+    agent_id_to_name: &HashMap<AgentId, AgentName>,
+    root_port_names: &[PortName],
+  ) -> Vec<Connection> {
     // Helper function to generate new unique port names
     let mut new_port_name = {
       let mut next_port_idx = 0;
@@ -590,6 +594,7 @@ impl INet {
             net: &INet,
             agent_id_to_name: &HashMap<AgentId, AgentName>,
             node_idx_to_agent_port_names: &mut HashMap<NodeIdx, Vec<PortName>>,
+            root_port_names: &[PortName],
             mut new_port_name: impl FnMut() -> String,
             node_port: NodePort,
           ) -> Connector {
@@ -601,9 +606,9 @@ impl INet {
               .entry(node_port.node_idx)
               .or_insert_with(|| (1 .. node.ports.len()).map(|_| new_port_name()).collect());
 
-            if node.agent_id == BOUNDARY_AGENT_ID {
-              // Connected to a port of the boundary node
-              Connector::Port(format!("{EXTERNAL_PORT_PREFIX}{port_idx}", port_idx = node_port.port_idx))
+            if node.agent_id == ROOT_AGENT_ID {
+              // Connected to a port of the root node
+              Connector::Port(root_port_names[node_port.port_idx].clone())
             } else {
               if node_port.port_idx == 0 {
                 // Connected to a principal port, either `x ~ root` or `x ~ Agent(...)`
@@ -627,6 +632,7 @@ impl INet {
             self,
             agent_id_to_name,
             &mut nodes_aux_port_names,
+            root_port_names,
             &mut new_port_name,
             src,
           );
@@ -634,6 +640,7 @@ impl INet {
             self,
             agent_id_to_name,
             &mut nodes_aux_port_names,
+            root_port_names,
             &mut new_port_name,
             dst,
           );
@@ -645,9 +652,13 @@ impl INet {
   }
 
   /// Read back reduced net into readable (nested) textual form
-  pub fn read_back(&self, agent_id_to_name: &HashMap<AgentId, AgentName>) -> String {
-    let connections = self.read_back_raw(agent_id_to_name);
-    let connections = unflatten_connections(connections);
+  pub fn read_back(
+    &self,
+    agent_id_to_name: &HashMap<AgentId, AgentName>,
+    root_port_names: &[PortName],
+  ) -> String {
+    let connections = self.read_back_raw(agent_id_to_name, root_port_names);
+    let connections = unflatten_connections(connections, root_port_names);
     fmt_nested_connections(&connections)
   }
 }
@@ -694,8 +705,6 @@ type MaybeLinkedPorts<'a> = Vec<[MaybeLinkedPort<'a>; 2]>;
 type ActivePairs = Vec<(NodeIdx, NodeIdx)>;
 
 type NodeIndices = Vec<NodeIdx>;
-
-pub const EXTERNAL_PORT_PREFIX: &str = "ep_";
 
 // Indexing utils to allow indexing an INet with a NodeIdx and NodePort
 

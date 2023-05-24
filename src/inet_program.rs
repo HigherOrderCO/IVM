@@ -1,6 +1,6 @@
 use crate::{
   inet::INet,
-  parser::ast::{AgentName, Ast},
+  parser::ast::{AgentName, Ast, ROOT_PORT_NAME},
   rule_book::{AgentId, RuleBook},
 };
 use derive_new::new;
@@ -28,6 +28,7 @@ impl INetProgram {
 
   /// Read back reduced net into readable (nested) textual form
   pub fn read_back(&mut self) -> String {
-    self.net.read_back(&self.agent_id_to_name)
+    let root_port_names = &[ROOT_PORT_NAME.to_owned()];
+    self.net.read_back(&self.agent_id_to_name, root_port_names)
   }
 }

@@ -358,12 +358,12 @@ impl ValidatedAst {
 
     let mut net = INet::default();
 
-    // Create root node with one port
+    // Create root node with one port which points to itself (by default)
     let root_node_idx = net.new_node(ROOT_AGENT_ID, 1);
     debug_assert_eq!(root_node_idx, ROOT_NODE_IDX);
     let root_port = port(root_node_idx, 0);
 
-    // The root node is the only external link ("free variable") in the `init` connections
+    // The root node is the only external port ("free variable") in the `init` connections
     let external_ports = vec![[Err(ROOT_PORT_NAME), Ok(root_port)]];
 
     net.add_connections(&ast.init.val, external_ports, &agent_name_to_id);
