@@ -368,7 +368,7 @@ impl ValidatedAst {
 
     net.add_connections(&ast.init.val, external_ports, &agent_name_to_id);
 
-    if cfg!(debug_assertions) {
+    if cfg!(test) {
       net.validate(false);
     }
     INetProgram::new(ast, net, rule_book, agent_id_to_name)

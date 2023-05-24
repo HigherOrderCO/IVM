@@ -407,7 +407,7 @@ impl INet {
       new_active_pairs.dedup();
     };
 
-    if cfg!(debug_assertions) {
+    if cfg!(test) {
       self.validate(true);
     }
     rewrite_happened

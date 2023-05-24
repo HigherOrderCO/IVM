@@ -108,7 +108,7 @@ impl RuleBook {
           .into();
 
         let _created_nodes = subnet.add_connections(rule_rhs, external_ports, agent_name_to_id);
-        if cfg!(debug_assertions) {
+        if cfg!(test) {
           subnet.validate(false);
         }
         subnet
@@ -136,7 +136,7 @@ impl RuleBook {
           |reduction_count| {
             (reduction_count > 0).then(|| {
               subnet.remove_unused_nodes();
-              if cfg!(debug_assertions) {
+              if cfg!(test) {
                 subnet.validate(false);
               }
               (*key, RuleRhs {
