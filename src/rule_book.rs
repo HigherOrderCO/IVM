@@ -117,23 +117,27 @@ impl RuleBook {
   /// Pre-reduce the rule book's RHS sub-nets as an optimization step before running the program.
   /// This must be done after all rules have been inserted.
   pub fn reduce_rule_rhs_subnets(&mut self, agent_id_to_name: &HashMap<AgentId, AgentName>) {
+    const RULE_BOOK_MAX_PRE_REDUCTION_STEPS: usize = 100;
+
     let reduced_rules = self
       .rules
       .iter()
       .filter_map(|(key, RuleRhs { active_pair, subnet })| {
         let mut subnet: INet = subnet.clone();
-        let reduction_count = subnet.reduce(self);
-        (reduction_count > 0).then(|| {
-          subnet.remove_unused_nodes();
-          if cfg!(debug_assertions) {
-            subnet.validate(false);
-          }
-          (*key, RuleRhs { active_pair: active_pair.clone(), subnet })
+        subnet.reduce_max_reductions(self, RULE_BOOK_MAX_PRE_REDUCTION_STEPS).and_then(|reduction_count| {
+          (reduction_count > 0).then(|| {
+            subnet.remove_unused_nodes();
+            if cfg!(debug_assertions) {
+              subnet.validate(false);
+            }
+            (*key, RuleRhs { active_pair: active_pair.clone(), subnet })
+          })
         })
       })
       .collect_vec();
 
     if cfg!(test) {
+      // Print reduced rule subnets
       let mut reduced_rules = reduced_rules
         .iter()
         .map(|(_, RuleRhs { active_pair, subnet })| {

@@ -523,6 +523,12 @@ impl INet {
   /// Only scans the net for active pairs in the beginning. After each rewrite, new active pairs are found by
   /// checking the nodes involved in and adjacent to the rewritten sub-net.
   pub fn reduce(&mut self, rule_book: &RuleBook) -> usize {
+    self.reduce_max_reductions(rule_book, usize::MAX).unwrap()
+  }
+
+  /// Like `reduce` but performs maximum `max_reductions` reduction steps.
+  /// Returns the number of reductions actually performed, None if limit was reached.
+  pub fn reduce_max_reductions(&mut self, rule_book: &RuleBook, max_reductions: usize) -> Option<usize> {
     let mut reuse = ReuseableRewriteData::default();
     let mut reduction_count = 0;
     let mut active_pairs = VecDeque::from(self.scan_active_pairs());
@@ -532,12 +538,15 @@ impl INet {
       if self.rewrite_active_pair(active_pair, rule_book, &mut reuse) {
         active_pairs.extend(&reuse.inet_new_active_pairs_created_by_rewrite);
         reduction_count += 1;
+        if reduction_count > max_reductions {
+          return None;
+        }
         reuse.clear_when_rule_matched();
       } else {
         reuse.clear_when_no_rule_matched();
       }
     }
-    reduction_count
+    Some(reduction_count)
   }
 
   /// Read back reduced net into textual form raw (unchanged)
