@@ -117,6 +117,9 @@ impl RuleBook {
   /// Pre-reduce the rule book's RHS sub-nets as an optimization step before running the program.
   /// This must be done after all rules have been inserted.
   pub fn reduce_rule_rhs_subnets(&mut self, agent_id_to_name: &HashMap<AgentId, AgentName>) {
+    /// Maximum number of reduction steps to perform on each rule's RHS sub-net.
+    /// If it cannot be reduced in this many steps, the original sub-net is kept.
+    /// Because rules' RHS sub-nets are not guaranteed to terminate.
     const RULE_BOOK_MAX_PRE_REDUCTION_STEPS: usize = 100;
 
     let reduced_rules = self
@@ -124,15 +127,17 @@ impl RuleBook {
       .iter()
       .filter_map(|(key, RuleRhs { active_pair, subnet })| {
         let mut subnet: INet = subnet.clone();
-        subnet.reduce_max_reductions(self, RULE_BOOK_MAX_PRE_REDUCTION_STEPS).and_then(|reduction_count| {
-          (reduction_count > 0).then(|| {
-            subnet.remove_unused_nodes();
-            if cfg!(debug_assertions) {
-              subnet.validate(false);
-            }
-            (*key, RuleRhs { active_pair: active_pair.clone(), subnet })
-          })
-        })
+        subnet.reduce_in_max_reductions::<RULE_BOOK_MAX_PRE_REDUCTION_STEPS>(self).and_then(
+          |reduction_count| {
+            (reduction_count > 0).then(|| {
+              subnet.remove_unused_nodes();
+              if cfg!(debug_assertions) {
+                subnet.validate(false);
+              }
+              (*key, RuleRhs { active_pair: active_pair.clone(), subnet })
+            })
+          },
+        )
       })
       .collect_vec();
 
