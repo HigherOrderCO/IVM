@@ -77,43 +77,40 @@ impl RuleBook {
       sort_tuples_by_fst(((lhs_id, lhs_agent), (rhs_id, rhs_agent)));
     let key = (lhs_id, rhs_id); // Ordered pair
 
-    let value = RuleRhs {
-      active_pair: active_pair.clone(),
-      root_port_names: [lhs_agent, rhs_agent]
-        .into_iter()
-        .flat_map(|agent| &agent.ports)
-        .map(|port| port.to_owned())
-        .collect_vec(),
-      subnet: {
-        let external_ports = [lhs_agent, rhs_agent]
-          .into_iter()
-          .flat_map(|agent| &agent.ports)
-          .enumerate()
-          .map(|(external_port_idx, port_name)| {
-            [Err(port_name.as_str()), Ok(NodePort { node_idx: ROOT_NODE_IDX, port_idx: external_port_idx })]
-          })
-          .collect_vec();
+    let (root_port_names, root_node_ports): (Vec<_>, Vec<_>) = [lhs_agent, rhs_agent]
+      .into_iter()
+      .flat_map(|agent| &agent.ports)
+      .enumerate()
+      .map(|(external_port_idx, port_name)| {
+        (port_name.to_owned(), NodePort { node_idx: ROOT_NODE_IDX, port_idx: external_port_idx })
+      })
+      .unzip();
 
-        // This inet represents the rule's RHS sub-net
-        let mut subnet = INet::default();
+    let subnet = {
+      let external_ports = root_port_names
+        .iter()
+        .zip(&root_node_ports)
+        .map(|(port_name, node_port)| [Err(port_name.as_str()), Ok(*node_port)])
+        .collect_vec();
 
-        // Create root node with as many ports as there are external ports in the rule's RHS sub-net
-        // (== the number of aux ports in the active pair)
-        // Set each port to point to itself.
-        let root_node_idx = subnet.new_node(ROOT_AGENT_ID, external_ports.len());
-        debug_assert_eq!(root_node_idx, ROOT_NODE_IDX);
-        subnet[root_node_idx].ports = (0 .. external_ports.len())
-          .map(|port_idx| NodePort { node_idx: ROOT_NODE_IDX, port_idx })
-          .collect_vec()
-          .into();
+      // This inet represents the rule's RHS sub-net
+      let mut subnet = INet::default();
 
-        let _created_nodes = subnet.add_connections(rule_rhs, external_ports, agent_name_to_id);
-        if cfg!(test) {
-          subnet.validate(false);
-        }
-        subnet
-      },
+      // Create root node with as many ports as there are external ports in the rule's RHS sub-net
+      // (== the number of aux ports in the active pair)
+      // Set each port to point to itself.
+      let root_node_idx = subnet.new_node(ROOT_AGENT_ID, external_ports.len());
+      debug_assert_eq!(root_node_idx, ROOT_NODE_IDX);
+      subnet[root_node_idx].ports = root_node_ports.into();
+
+      let _created_nodes = subnet.add_connections(rule_rhs, external_ports, agent_name_to_id);
+      if cfg!(test) {
+        subnet.validate(false);
+      }
+      subnet
     };
+
+    let value = RuleRhs { active_pair: active_pair.clone(), root_port_names, subnet };
     if let Some(_) = self.rules.insert(key, value) {
       errors.push(Rich::custom(*span, format!("Duplicate rule for active pair `{active_pair}`")));
     }
