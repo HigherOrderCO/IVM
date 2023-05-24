@@ -5,7 +5,6 @@ newline_style = "Unix"
 use_small_heuristics = "Max"
 tab_spaces = 2
 imports_granularity = "Crate"
-reorder_impl_items = true
 use_field_init_shorthand = true
 use_try_shorthand = true
 spaces_around_ranges = true

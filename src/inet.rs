@@ -107,20 +107,13 @@ impl INet {
       eprintln!("validate: {self:#?}");
     } */
 
-    let mut used_node_count = 0;
-    let mut contains_used_root_node = false;
     let mut contains_unused_nodes = false;
     for (node_idx, node) in self.nodes.iter().enumerate() {
       if node.used {
-        used_node_count += 1;
+        assert_ne!(node.agent_id, Self::INTERMEDIARY_AGENT_ID);
 
-        let is_root_node = node.agent_id == ROOT_AGENT_ID;
-        if is_root_node {
-          contains_used_root_node = true;
-        }
-
-        if !is_root_node {
-          assert_ne!(node.ports.len(), 0, "Nodes must have at least one port:\n{node:#?}");
+        if node_idx != ROOT_NODE_IDX {
+          assert_ne!(node.ports.len(), 0, "Non-root nodes must have at least one port:\n{node:#?}");
         }
 
         for port_idx in 0 .. node.ports.len() {
@@ -140,14 +133,15 @@ impl INet {
         assert!(self.free_nodes.contains(&node_idx), "\n{self:#?}");
       }
     }
-    if contains_used_root_node {
-      assert!(
-        allow_unused_nodes || !contains_unused_nodes,
-        "Rule RHS subnet must have all unused nodes removed:\n{self:#?}"
-      );
-    } else {
-      assert!(used_node_count >= 2, "Interaction net has {used_node_count} < 2 nodes:\n{self:#?}");
+    if !self.nodes.is_empty() {
+      let node = &self[ROOT_NODE_IDX];
+      assert!(node.used, "Root node must be used");
+      assert_eq!(node.agent_id, ROOT_AGENT_ID);
     }
+    assert!(
+      allow_unused_nodes || !contains_unused_nodes,
+      "INet is not allowed to have unused nodes:\n{self:#?}"
+    );
   }
 
   /// Add a `Connector` to the net, only called by `INet::add_connections`.
@@ -295,6 +289,18 @@ impl INet {
     }
   }
 
+  // The rewrite mechanism assumes that all wires between aux ports of the active pair
+  // and the rest of the net are unique. E.g. `A(a, a) ~ B` or `A(a) ~ B(a)` would be a problem.
+  // Our workaround: If the active pair contains two references to the same wire,
+  // we split the wire into two, by inserting a temporary intermediary node:
+  // E.g. `A(a, a) ~ B` becomes `A(a, b) ~ B, a ~ TMP(b)`
+  // E.g. `A(a) ~ B(a)` becomes `A(a) ~ B(b), a ~ TMP(b)`
+  // This is done by adding an intermediary node with two ports, one of which is linked to each
+  // of the two aux ports that were previously using the same wire (like a wire going through it).
+  // Then the rewrite is performed as usual, and afterwards the two ports of the intermediary
+  // node are linked together and the intermediary node is removed.
+  const INTERMEDIARY_AGENT_ID: AgentId = usize::MAX;
+
   /// Rewrite active pair using rule book.
   /// Assumes that reuse buffers are empty.
   /// Returns `false` if active pair could not be rewritten because there was no matching rule
@@ -335,17 +341,6 @@ impl INet {
         .map(|port| port.node_idx),
     );
 
-    // The rewrite mechanism assumes that all wires between aux ports of the active pair
-    // and the rest of the net are unique. E.g. `A(a, a) ~ B` or `A(a) ~ B(a)` would be a problem.
-    // Our workaround: If the active pair contains two references to the same wire,
-    // we split the wire into two, by inserting a temporary intermediary node:
-    // E.g. `A(a, a) ~ B` becomes `A(a, b) ~ B, a ~ TMP(b)`
-    // E.g. `A(a) ~ B(a)` becomes `A(a) ~ B(b), a ~ TMP(b)`
-    // This is done by adding an intermediary node with two ports, one of which is linked to each
-    // of the two aux ports that were previously using the same wire (like a wire going through it).
-    // Then the rewrite is performed as usual, and afterwards the two ports of the intermediary
-    // node are linked together and the intermediary node is removed.
-    const INTERMEDIARY_AGENT_ID: AgentId = usize::MAX;
     let intermediary_nodes = &mut reuse.inet_intermediary_nodes;
     for node_idx in [a, b] {
       // Skip principal port
@@ -357,7 +352,7 @@ impl INet {
           // the problematic self-link of the active pair into a link to another node,
           // which allows us to rewrite the active pair by assuming there are no self-links.
           // We link port 0 of TMP to src and port 1 of TMP to dst, to split the shared wire.
-          let intermediary = self.new_node(INTERMEDIARY_AGENT_ID, 2);
+          let intermediary = self.new_node(Self::INTERMEDIARY_AGENT_ID, 2);
           let src = port(node_idx, port_idx);
           self.link(src, port(intermediary, 0));
           self.link(dst, port(intermediary, 1));
