@@ -305,6 +305,8 @@ impl Ast {
         rule_book.insert_rule(rule, rule_src, &agent_name_to_id, &mut errors);
       }
     }
+    let agent_id_to_name = agent_name_to_id.iter().map(|(name, id)| (*id, name.clone())).collect();
+    rule_book.reduce_rule_rhs_subnets(&agent_id_to_name);
 
     // We validated the connections of all rules' RHS, now we validate the `init` connections
     validate_connections(
@@ -335,7 +337,7 @@ impl Ast {
 
     pass_output_and_errors_to_result(
       src,
-      Some(ValidatedAst { ast: self, rule_book, agent_name_to_id }),
+      Some(ValidatedAst { ast: self, rule_book, agent_name_to_id, agent_id_to_name }),
       errors,
     )
   }
@@ -346,12 +348,13 @@ pub struct ValidatedAst {
   pub ast: Ast,
   pub rule_book: RuleBook,
   pub agent_name_to_id: HashMap<AgentName, AgentId>,
+  pub agent_id_to_name: HashMap<AgentId, AgentName>,
 }
 
 impl ValidatedAst {
   /// Generate an `INetProgram` from a `ValidatedAst`
   pub fn into_inet_program(self) -> INetProgram {
-    let Self { ast, rule_book, agent_name_to_id } = self;
+    let Self { ast, rule_book, agent_name_to_id, agent_id_to_name } = self;
 
     let mut net = INet::default();
 
@@ -366,9 +369,9 @@ impl ValidatedAst {
     net.add_connections(&ast.init.val, external_ports, &agent_name_to_id);
 
     if cfg!(debug_assertions) {
-      net.validate();
+      net.validate(false);
     }
-    INetProgram::new(ast, net, rule_book, agent_name_to_id)
+    INetProgram::new(ast, net, rule_book, agent_id_to_name)
   }
 }
 

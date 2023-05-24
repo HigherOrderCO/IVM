@@ -456,8 +456,8 @@ fn test_duplicate_rule() -> IvmResult<()> {
   let src = "
     agent A
     agent B
-    rule A ~ B = A ~ B
-    rule B ~ A = A ~ B
+    rule A ~ B =
+    rule B ~ A =
     init root ~ A
   ";
   let ast = Ast::parse(src)?;
@@ -530,7 +530,7 @@ fn test_unary_arith() -> IvmResult<()> {
     rule Sub(ret, a) ~ Succ(b) = Pred(pa) ~ a, Sub(ret, pa) ~ b,
 
     agent AbsDiff(ret, a)
-    // rule AbsDiff(ret, a) ~ b = Add(ret, x) ~ y, Sub(x, a) ~ b, Sub(y, b) ~ a
+    // rule AbsDiff(ret, a) ~ b = Add(ret, x) ~ y, Sub(x, a2) ~ Succ(b2), Sub(y, Succ(b3)) ~ a3, Dup(a2, a3) ~ a, Dup(b2, b3) ~ b
     rule AbsDiff(ret, a) ~ Zero = Add(ret, x) ~ y, Sub(x, a2) ~ Zero, Sub(y, Zero) ~ a3, Dup(a2, a3) ~ a
     rule AbsDiff(ret, a) ~ Succ(b) = Add(ret, x) ~ y, Sub(x, a2) ~ Succ(b2), Sub(y, Succ(b3)) ~ a3, Dup(a2, a3) ~ a, Dup(b2, b3) ~ b
 
@@ -671,5 +671,18 @@ fn test_treesum() -> IvmResult<()> {
   let result = program.read_back();
   let res = nat(1 << n);
   assert_eq!(result, format!("root ~ {res}"));
+  Ok(())
+}
+
+#[test]
+fn test_rule_rhs_reduction_doesnt_terminate() -> IvmResult<()> {
+  let src = "
+    agent A
+    agent B
+    rule A ~ B = A ~ B
+    init root ~ A
+  ";
+  let ast = Ast::parse(src)?;
+  assert!(ast.validate(src).is_ok());
   Ok(())
 }

@@ -1,4 +1,4 @@
-use crate::{parser::ast::*, util::sort_tuple};
+use crate::{inet::EXTERNAL_PORT_PREFIX, parser::ast::*, util::sort_tuple};
 use itertools::Itertools;
 
 // The syntax allows writing nested agents for convenience, this gets flattened during parsing.
@@ -196,11 +196,10 @@ pub fn unflatten_connections(connections: Vec<Connection>) -> Vec<NestedConnecti
         // Sort, so that `wire_to_use` is always the lower one,
         // e.g. `root ~ Lam(_0, _1), _0 ~ _1` becomes `root ~ Lam(_0, _0)`, not `root ~ Lam(_1, _1)`
         let (wire_to_use, wire_to_replace) = sort_tuple((a.clone(), b.clone()));
-        Some(if wire_to_replace == ROOT_PORT_NAME {
-          // E.g. `root` ~ _0
-          // Never replace `root`, replace the other one with `root`.
-          // Note that `wire_to_use` cannot be `root` because `INet::read_back` always
-          // prefixes ports with '_', which is less than 'r' when ordering.
+
+        // If `wire_to_replace` has a protected name, keep it and replace `wire_to_use` with it.
+        // E.g. `root ~ _0` or `ep_0 ~ _0`
+        Some(if wire_to_replace == ROOT_PORT_NAME || wire_to_replace.starts_with(EXTERNAL_PORT_PREFIX) {
           (i, wire_to_replace, wire_to_use)
         } else {
           (i, wire_to_use, wire_to_replace)

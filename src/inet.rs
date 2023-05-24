@@ -1,6 +1,8 @@
 use crate::{
-  parser::ast::{
-    Agent, AgentName, Connection, Connector, PortName, PortNameRef, ROOT_NODE_IDX, ROOT_PORT_NAME,
+  parser::{
+    ast::{Agent, AgentName, Connection, Connector, PortName, PortNameRef, ROOT_NODE_IDX, ROOT_PORT_NAME},
+    display::fmt_nested_connections,
+    flatten::unflatten_connections,
   },
   rule_book::{AgentId, RuleBook, BOUNDARY_AGENT_ID, BOUNDARY_NODE_IDX},
   util::sort_tuple,
@@ -8,6 +10,7 @@ use crate::{
 use hashbrown::HashMap;
 use smallvec::SmallVec;
 use std::{
+  cmp::Reverse,
   collections::VecDeque,
   fmt,
   ops::{Index, IndexMut},
@@ -99,7 +102,7 @@ impl INet {
 
   /// Validate the inet, panics if invalid, useful for debugging/tests
   /// If an INet generated from a valid AST fails validation, it'd be a bug
-  pub fn validate(&self) {
+  pub fn validate(&self, allow_unused_nodes: bool) {
     /* if cfg!(test) {
       eprintln!("validate: {self:#?}");
     } */
@@ -138,7 +141,10 @@ impl INet {
       }
     }
     if contains_used_boundary_node {
-      assert!(!contains_unused_nodes, "Rule RHS subnet must have all unused nodes removed:\n{self:#?}");
+      assert!(
+        allow_unused_nodes || !contains_unused_nodes,
+        "Rule RHS subnet must have all unused nodes removed:\n{self:#?}"
+      );
     } else {
       assert!(used_node_count >= 2, "Interaction net has {used_node_count} < 2 nodes:\n{self:#?}");
     }
@@ -272,8 +278,9 @@ impl INet {
     created_nodes
   }
 
-  /// Remove all unused nodes
+  /// Remove all unused nodes, called by `RuleBook::reduce_rule_rhs_subnets`
   pub fn remove_unused_nodes(&mut self) {
+    self.free_nodes.sort_by_key(|&node_idx| Reverse(node_idx));
     for unused_node_idx in self.free_nodes.drain(..) {
       // Remove node
       let _unused_node = self.nodes.remove(unused_node_idx);
@@ -366,9 +373,7 @@ impl INet {
     // we can remove the intermediary nodes and link their two wires together into one again.
     for &node_idx in &*intermediary_nodes {
       let node = &self[node_idx];
-      let src = node[0];
-      let dst = node[1];
-      self.link(src, dst);
+      self.link(node[0], node[1]);
       self.free_node(node_idx);
     }
 
@@ -403,7 +408,7 @@ impl INet {
     };
 
     if cfg!(debug_assertions) {
-      self.validate();
+      self.validate(true);
     }
     rewrite_happened
   }
@@ -469,9 +474,16 @@ impl INet {
 
   /// Determines if a given node is part of an active pair and returns the other node in the pair
   fn node_is_part_of_active_pair(&self, node_idx: NodeIdx) -> Option<NodeIdx> {
-    let dst = self[port(node_idx, 0)];
-    // After validation, we can assume that dst.node_idx == node_idx
-    (dst.port_idx == 0).then_some(dst.node_idx)
+    // The only node that can have no ports is the boundary node, e.g. in `rule Era ~ Zero =`
+    let node = &self[node_idx];
+    if node.ports.is_empty() {
+      debug_assert_eq!(node.agent_id, BOUNDARY_AGENT_ID);
+      None
+    } else {
+      let dst = self[port(node_idx, 0)];
+      // After validation, we can assume that dst.node_idx == node_idx
+      (dst.port_idx == 0).then_some(dst.node_idx)
+    }
   }
 
   /// Determine active pairs that can potentially be rewritten if there is a matching rule
@@ -528,8 +540,8 @@ impl INet {
     reduction_count
   }
 
-  /// Read back reduced net into textual form
-  pub fn read_back(&self, agent_id_to_name: &HashMap<AgentId, AgentName>) -> Vec<Connection> {
+  /// Read back reduced net into textual form raw (unchanged)
+  pub fn read_back_raw(&self, agent_id_to_name: &HashMap<AgentId, AgentName>) -> Vec<Connection> {
     // Helper function to generate new unique port names
     let mut new_port_name = {
       let mut next_port_idx = 0;
@@ -576,19 +588,24 @@ impl INet {
               .entry(node_port.node_idx)
               .or_insert_with(|| (1 .. node.ports.len()).map(|_| new_port_name()).collect());
 
-            if node_port.port_idx == 0 {
-              // Connected to a principal port, either `x ~ root` or `x ~ Agent(...)`
-              if node_port.node_idx == ROOT_NODE_IDX {
-                Connector::Port(ROOT_PORT_NAME.to_string())
-              } else {
-                Connector::Agent(Agent {
-                  agent: agent_id_to_name[&node.agent_id].clone(),
-                  ports: agent_aux_port_names.clone(),
-                })
-              }
+            if node.agent_id == BOUNDARY_AGENT_ID {
+              // Connected to a port of the boundary node
+              Connector::Port(format!("{EXTERNAL_PORT_PREFIX}{port_idx}", port_idx = node_port.port_idx))
             } else {
-              // Connected to auxiliary port of agent: `x ~ aux, Agent(..., aux, ...) ~ y`
-              Connector::Port(agent_aux_port_names[node_port.port_idx - 1].clone())
+              if node_port.port_idx == 0 {
+                // Connected to a principal port, either `x ~ root` or `x ~ Agent(...)`
+                if node_port.node_idx == ROOT_NODE_IDX {
+                  Connector::Port(ROOT_PORT_NAME.to_string())
+                } else {
+                  Connector::Agent(Agent {
+                    agent: agent_id_to_name[&node.agent_id].clone(),
+                    ports: agent_aux_port_names.clone(),
+                  })
+                }
+              } else {
+                // Connected to auxiliary port of agent: `x ~ aux, Agent(..., aux, ...) ~ y`
+                Connector::Port(agent_aux_port_names[node_port.port_idx - 1].clone())
+              }
             }
           }
 
@@ -612,6 +629,13 @@ impl INet {
       }
     }
     connections
+  }
+
+  /// Read back reduced net into readable (nested) textual form
+  pub fn read_back(&self, agent_id_to_name: &HashMap<AgentId, AgentName>) -> String {
+    let connections = self.read_back_raw(agent_id_to_name);
+    let connections = unflatten_connections(connections);
+    fmt_nested_connections(&connections)
   }
 }
 
@@ -657,6 +681,8 @@ type MaybeLinkedPorts<'a> = Vec<[MaybeLinkedPort<'a>; 2]>;
 type ActivePairs = Vec<(NodeIdx, NodeIdx)>;
 
 type NodeIndices = Vec<NodeIdx>;
+
+pub const EXTERNAL_PORT_PREFIX: &str = "ep_";
 
 // Indexing utils to allow indexing an INet with a NodeIdx and NodePort
 
