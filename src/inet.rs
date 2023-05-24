@@ -113,6 +113,10 @@ impl INet {
         assert_ne!(node.agent_id, Self::INTERMEDIARY_AGENT_ID);
 
         if node_idx != ROOT_NODE_IDX {
+          assert_ne!(
+            node.agent_id, ROOT_AGENT_ID,
+            "Non-root nodes must have a non-root agent id:\n{node:#?}"
+          );
           assert_ne!(node.ports.len(), 0, "Non-root nodes must have at least one port:\n{node:#?}");
         }
 
@@ -471,8 +475,7 @@ impl INet {
   fn node_is_part_of_active_pair(&self, node_idx: NodeIdx) -> Option<NodeIdx> {
     // The only node that can have no ports is the subnet root node, e.g. in `rule Era ~ Zero =`
     let node = &self[node_idx];
-    if node.ports.is_empty() {
-      debug_assert_eq!(node.agent_id, ROOT_AGENT_ID);
+    if node.agent_id == ROOT_AGENT_ID {
       None
     } else {
       let dst = self[port(node_idx, 0)];
@@ -497,6 +500,23 @@ impl INet {
       }
     }
     active_pairs
+  }
+
+  /// Returns the active pairs that can come into existence after inserting a subnet,
+  /// pass-through-linking through its root node and removing it.
+  /// In other words, returns indices of nodes whose principal port points to a root node port.
+  pub fn potential_active_pair_candidates_after_inserting_subnet(&self) -> NodeIndices {
+    let mut candidates = vec![];
+    for &target in &self[ROOT_NODE_IDX].ports {
+      if target.node_idx == ROOT_NODE_IDX {
+        continue;
+      }
+
+      if target.port_idx == 0 {
+        candidates.push(target.node_idx);
+      }
+    }
+    candidates
   }
 
   /// Perform one reduction step:

@@ -110,6 +110,10 @@ impl RuleBook {
       subnet
     };
 
+    let subnet_active_pairs = subnet.scan_active_pairs();
+    let potential_active_pair_candidates_after_inserting_subnet =
+      subnet.potential_active_pair_candidates_after_inserting_subnet();
+
     let value = RuleRhs { active_pair: active_pair.clone(), root_port_names, subnet };
     if let Some(_) = self.rules.insert(key, value) {
       errors.push(Rich::custom(*span, format!("Duplicate rule for active pair `{active_pair}`")));

@@ -146,7 +146,7 @@ fn test_add_zero_zero() -> IvmResult<()> {
   assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   program.reduce();
   eprintln!("program.net.active_pairs(): {:#?}", program.net.scan_active_pairs());
-  assert_eq!(program.net.scan_active_pairs(), vec![(0, 3)], "{}\n{:#?}", program.ast, program.net);
+  assert_eq!(program.net.scan_active_pairs(), vec![], "{}\n{:#?}", program.ast, program.net);
   assert_eq!(program.read_back(), "root ~ Zero");
   Ok(())
 }
@@ -189,7 +189,7 @@ fn test_reduce_inet_ctor_era() -> IvmResult<()> {
   assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   assert!(!program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   eprintln!("program.net.active_pairs(): {:#?}", program.net.scan_active_pairs());
-  assert_eq!(program.net.scan_active_pairs(), vec![(0, 4)], "{}\n{:#?}", program.ast, program.net);
+  assert_eq!(program.net.scan_active_pairs(), vec![], "{}\n{:#?}", program.ast, program.net);
   program.reduce();
   let result = program.read_back();
   assert_eq!(result, "root ~ R");
@@ -332,10 +332,10 @@ fn test_reduce_inet_link_self_double() -> IvmResult<()> {
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
   let mut program = ast.into_inet_program();
-  assert_eq!(program.net.scan_active_pairs().len(), 2, "{}\n{:#?}", program.ast, program.net);
+  assert_eq!(program.net.scan_active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   assert!(!program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
-  assert_eq!(program.net.scan_active_pairs(), vec![(0, 3)], "{}\n{:#?}", program.ast, program.net);
+  assert_eq!(program.net.scan_active_pairs(), vec![], "{}\n{:#?}", program.ast, program.net);
   assert_eq!(program.read_back(), "root ~ E");
   Ok(())
 }
@@ -369,7 +369,7 @@ fn test_reduce_inet_link_pair_double() -> IvmResult<()> {
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
   let mut program = ast.into_inet_program();
-  assert_eq!(program.net.scan_active_pairs().len(), 2, "{}\n{:#?}", program.ast, program.net);
+  assert_eq!(program.net.scan_active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   assert!(!program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   assert_eq!(program.read_back(), "root ~ E");
