@@ -56,14 +56,13 @@ impl RuleBook {
   }
 
   /// Insert into rule book and check for duplicate rules
-  /// Returns `false` if a rule for this active pair already exists
   pub fn insert_rule(
     &mut self,
     rule: &Rule,
     _rule_src: &str,
     agent_name_to_id: &HashMap<AgentName, AgentId>,
     errors: &mut ProgramErrors,
-  ) -> bool {
+  ) {
     let Rule { lhs: active_pair, rhs: rule_rhs, span } = rule;
 
     let ActivePair { lhs: lhs_agent, rhs: rhs_agent } = active_pair;
@@ -112,9 +111,6 @@ impl RuleBook {
     };
     if let Some(_) = self.rules.insert(key, value) {
       errors.push(Rich::custom(*span, format!("Duplicate rule for active pair `{active_pair}`")));
-      false
-    } else {
-      true
     }
   }
 
@@ -126,19 +122,8 @@ impl RuleBook {
       .iter()
       .filter_map(|(key, RuleRhs { active_pair, subnet })| {
         let mut subnet: INet = subnet.clone();
-        /* let before = subnet.clone();
-        eprintln!("before reduction ({active_pair})"); */
         let reduction_count = subnet.reduce(self);
         (reduction_count > 0).then(|| {
-          /* eprintln!(
-            "before {reduction_count} reductions ({active_pair}): {}",
-            // fmt_connections(&before.read_back_raw(agent_id_to_name))
-            before.read_back(agent_id_to_name)
-          );
-          eprintln!(
-            "after {reduction_count} reductions ({active_pair}): {}",
-            fmt_connections(&subnet.read_back_raw(agent_id_to_name)) // subnet.read_back(agent_id_to_name)
-          ); */
           subnet.remove_unused_nodes();
           if cfg!(debug_assertions) {
             subnet.validate(false);
@@ -148,7 +133,7 @@ impl RuleBook {
       })
       .collect_vec();
 
-    if cfg!(debug_assertions) {
+    if cfg!(test) {
       let mut reduced_rules = reduced_rules
         .iter()
         .map(|(_, RuleRhs { active_pair, subnet })| {
@@ -161,6 +146,7 @@ impl RuleBook {
       }
     }
 
+    // Overwrite rules with reduced rules
     self.rules.extend(reduced_rules);
   }
 
@@ -184,8 +170,6 @@ impl RuleBook {
     let key = (lhs_id, rhs_id); // Ordered pair
 
     if let Some(RuleRhs { active_pair: _, subnet }) = self.rules.get(&key) {
-      // eprintln!("Applying rule for active pair `{key:?}`");
-
       // Construct external ports for the rule's RHS sub-net
       reuse.rule_book_external_ports.extend([lhs_node, rhs_node].into_iter().flat_map(|node| {
         node.ports.iter().skip(1).copied() // Skip principal port
