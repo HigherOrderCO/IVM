@@ -1,9 +1,9 @@
 use crate::{
   error::ProgramErrors,
-  inet::{INet, NodeIdx, NodePort, ReuseableSubnetData},
+  inet::{ActiveNodePair, ActivePairCandidates, INet, NodeIdx, NodePort, ReuseableSubnetData},
   parser::ast::{ActivePair, AgentName, PortName, Rule, ROOT_NODE_IDX},
   rule_map::RuleMap,
-  util::sort_tuples_by_fst,
+  util::{sort_tuple, sort_tuples_by_fst},
 };
 use chumsky::prelude::Rich;
 use hashbrown::HashMap;
@@ -36,7 +36,9 @@ pub struct RuleRhs {
   /// `root_port_names` is `["ret", "a"]`, and the sub-net is `IsZero((0, 0)) ~ (0, 1)`.
   /// The sub-net's root node is removed during rule application after its ports have been
   /// pass-through-linked to bridge the boundary between the main net and the sub-net.
-  subnet: INet,
+  pub(crate) subnet: INet,
+
+  pub(crate) active_pair_candidates_after_inserting_subnet: ActivePairCandidates,
 }
 
 /// The rule book is a mapping from active pair to a rule's RHS connections.
@@ -110,19 +112,67 @@ impl RuleBook {
       subnet
     };
 
-    let subnet_active_pairs = subnet.scan_active_pairs();
-    let potential_active_pair_candidates_after_inserting_subnet =
-      subnet.potential_active_pair_candidates_after_inserting_subnet();
+    // let active_pair_candidates_after_inserting_subnet =
+    //   subnet.active_pair_candidates_after_inserting_subnet(self);
 
-    let value = RuleRhs { active_pair: active_pair.clone(), root_port_names, subnet };
+    let active_pair_candidates_after_inserting_subnet = ActivePairCandidates::default();
+
+    let value = RuleRhs {
+      active_pair: active_pair.clone(),
+      root_port_names,
+      subnet,
+      active_pair_candidates_after_inserting_subnet,
+    };
     if let Some(_) = self.rules.insert(key, value) {
       errors.push(Rich::custom(*span, format!("Duplicate rule for active pair `{active_pair}`")));
     }
   }
 
+  /// Finalize the rule book after all rules have been inserted. Must be called before doing rewrites.
+  /// Precompute and store the active pair candidates for each rule's RHS subnet.
+  /// Optionally optimize the rule book by reducing the RHS sub-nets of each rule.
+  pub fn finalize(&mut self, agent_id_to_name: &HashMap<AgentId, AgentName>, reduce_rule_rhs_subnets: bool) {
+    self.precompute_active_pair_candidates();
+
+    if reduce_rule_rhs_subnets {
+      self.reduce_rule_rhs_subnets(&agent_id_to_name);
+    }
+  }
+
+  /// Precompute and store the active pair candidates for each rule's RHS subnet.
+  fn precompute_active_pair_candidates(&mut self) {
+    self.rules = self
+      .rules
+      .clone()
+      .into_iter()
+      .map(|(lhs, mut rhs)| {
+        rhs.active_pair_candidates_after_inserting_subnet =
+          rhs.subnet.active_pair_candidates_after_inserting_subnet(self);
+        // println!("post_process_rule_book: {lhs:?}: {:?}", rhs.active_pair_candidates_after_inserting_subnet);
+
+        let active_pair_candidates_after_inserting_subnet = &rhs.active_pair_candidates_after_inserting_subnet;
+        if cfg!(test)
+        && (!active_pair_candidates_after_inserting_subnet.active_pairs_inside_subnet.is_empty()
+          || !active_pair_candidates_after_inserting_subnet
+            .active_pair_candidates_across_subnet_boundary
+            .is_empty()
+          || !active_pair_candidates_after_inserting_subnet.active_pair_candidates_outside_subnet.is_empty())
+        {
+          println!(
+            "Agents: {:?}, subnet: {:#?}, active_pair_candidates_after_inserting_subnet: {active_pair_candidates_after_inserting_subnet:#?}",
+            lhs,
+            rhs.subnet
+          );
+        }
+
+        (lhs, rhs)
+      })
+      .collect();
+  }
+
   /// Pre-reduce the rule book's RHS sub-nets as an optimization step before running the program.
   /// This must be done after all rules have been inserted.
-  pub fn reduce_rule_rhs_subnets(&mut self, agent_id_to_name: &HashMap<AgentId, AgentName>) {
+  fn reduce_rule_rhs_subnets(&mut self, agent_id_to_name: &HashMap<AgentId, AgentName>) {
     /// Maximum number of reduction steps to perform on each rule's RHS sub-net.
     /// If it cannot be reduced in this many steps, the original sub-net is kept.
     /// Because rules' RHS sub-nets are not guaranteed to terminate.
@@ -131,33 +181,62 @@ impl RuleBook {
     let reduced_rules = self
       .rules
       .iter()
-      .filter_map(|(key, RuleRhs { active_pair, root_port_names, subnet })| {
-        let mut subnet: INet = subnet.clone();
-        subnet.reduce_in_max_reductions::<RULE_BOOK_MAX_PRE_REDUCTION_STEPS>(self).and_then(
-          |reduction_count| {
-            (reduction_count > 0).then(|| {
-              subnet.remove_unused_nodes();
-              if cfg!(test) {
-                subnet.validate(false);
-              }
-              (*key, RuleRhs {
-                active_pair: active_pair.clone(),
-                root_port_names: root_port_names.clone(),
-                subnet,
-              })
-            })
-          },
-        )
-      })
+      .filter_map(
+        |(
+          key,
+          RuleRhs { active_pair, root_port_names, subnet, active_pair_candidates_after_inserting_subnet },
+        )| {
+          // We can reduce if there are active pairs in the rule's RHS sub-net.
+          // It doesn't guarantee that the reduction terminates though.
+          let can_reduce =
+            !active_pair_candidates_after_inserting_subnet.active_pairs_inside_subnet.is_empty();
+          if can_reduce {
+            let mut subnet: INet = subnet.clone();
+            subnet.reduce_in_max_reductions::<RULE_BOOK_MAX_PRE_REDUCTION_STEPS>(self).and_then(
+              |reduction_count| {
+                (reduction_count > 0).then(|| {
+                  subnet.remove_unused_nodes();
+                  if cfg!(test) {
+                    subnet.validate(false);
+                  }
+
+                  let active_pair_candidates_after_inserting_subnet =
+                    subnet.active_pair_candidates_after_inserting_subnet(self);
+                  debug_assert_eq!(
+                    active_pair_candidates_after_inserting_subnet.active_pairs_inside_subnet,
+                    vec![],
+                    "Subnet must not have any active pairs after being reduced"
+                  );
+
+                  (*key, RuleRhs {
+                    active_pair: active_pair.clone(),
+                    root_port_names: root_port_names.clone(),
+                    subnet,
+                    active_pair_candidates_after_inserting_subnet,
+                  })
+                })
+              },
+            )
+          } else {
+            None
+          }
+        },
+      )
       .collect_vec();
 
-    if cfg!(test) {
+    if cfg!(debug_assertions) {
       // Print reduced rule subnets
       let mut reduced_rules = reduced_rules
         .iter()
-        .map(|(_, RuleRhs { active_pair, root_port_names, subnet })| {
-          format!("rule {active_pair} = {}", subnet.read_back(agent_id_to_name, root_port_names))
-        })
+        .map(
+          |(
+            _,
+            RuleRhs { active_pair, root_port_names, subnet, active_pair_candidates_after_inserting_subnet },
+          )| {
+            format!("rule {active_pair} = {}", subnet.read_back(agent_id_to_name, root_port_names))
+            // format!("rule {active_pair} = {}\nactive_pair_candidates_after_inserting_subnet: {active_pair_candidates_after_inserting_subnet:?}\nsubnet: {subnet:?}", subnet.read_back(agent_id_to_name, root_port_names))
+          },
+        )
         .collect_vec();
       reduced_rules.sort();
       if !reduced_rules.is_empty() {
@@ -176,9 +255,9 @@ impl RuleBook {
   pub fn apply_rewrite_rule(
     &self,
     net: &mut INet,
-    active_pair: (NodeIdx, NodeIdx),
+    active_pair: ActiveNodePair,
     reuse: &mut ReuseableSubnetData,
-  ) -> bool {
+  ) -> Option<&ActivePairCandidates> {
     let (node_idx_lhs, node_idx_rhs) = active_pair;
     let (lhs_node, rhs_node) = (&net[node_idx_lhs], &net[node_idx_rhs]);
     let (lhs_id, rhs_id) = (lhs_node.agent_id, rhs_node.agent_id);
@@ -188,15 +267,52 @@ impl RuleBook {
       sort_tuples_by_fst(((lhs_id, lhs_node), (rhs_id, rhs_node)));
     let key = (lhs_id, rhs_id); // Ordered pair
 
-    if let Some(RuleRhs { active_pair: _, root_port_names: _, subnet }) = self.rules.get(&key) {
+    if let Some(RuleRhs {
+      active_pair,
+      root_port_names: _,
+      subnet,
+      active_pair_candidates_after_inserting_subnet,
+    }) = self.rules.get(&key)
+    {
       // Construct external ports for the rule's RHS sub-net
       reuse.rule_book_external_ports.extend([lhs_node, rhs_node].into_iter().flat_map(|node| {
         node.ports.iter().skip(1).copied() // Skip principal port
       }));
+
+      println!("rule {} = {:?}", active_pair, subnet);
+
       net.insert_rule_rhs_subnet(subnet, reuse);
-      true
+      Some(active_pair_candidates_after_inserting_subnet)
     } else {
-      false
+      None
     }
+  }
+
+  /// Checks if a rule exists for the given active pair, returns the node indices ordered by agent IDs
+  pub fn rule_exists_for_active_pair(
+    &self,
+    net: &INet,
+    active_pair: ActiveNodePair,
+  ) -> Option<ActiveNodePair> {
+    let (node_idx_lhs, node_idx_rhs) = active_pair;
+    let (lhs_node, rhs_node) = (&net[node_idx_lhs], &net[node_idx_rhs]);
+    let (lhs_id, rhs_id) = (lhs_node.agent_id, rhs_node.agent_id);
+
+    // Order node indices along with AgentIDs
+    let ((lhs_id, node_idx_lhs), (rhs_id, node_idx_rhs)) =
+      sort_tuples_by_fst(((lhs_id, node_idx_lhs), (rhs_id, node_idx_rhs)));
+    let key = (lhs_id, rhs_id); // Ordered pair
+
+    self.rules.contains_key(&key).then(|| (node_idx_lhs, node_idx_rhs))
+  }
+
+  /// Returns `true` if a rule exists for the given agent ID on either side of the active pair
+  pub fn rule_exists_for_agent_id(&self, agent_id: AgentId) -> bool {
+    self.rules.keys().flat_map(|(lhs_id, rhs_id)| [lhs_id, rhs_id]).any(|id| *id == agent_id)
+  }
+
+  #[cfg(test)]
+  pub(crate) fn get_rule_for_agents(&self, agent_ids: RuleLhs) -> Option<&RuleRhs> {
+    self.rules.get(&sort_tuple(agent_ids))
   }
 }

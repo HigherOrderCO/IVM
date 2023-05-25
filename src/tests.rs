@@ -116,7 +116,7 @@ fn test_add_one_three() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.into_inet_program();
+  let mut program = ast.into_inet_program(true);
   assert_eq!(program.net.scan_active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   program.reduce();
@@ -140,7 +140,7 @@ fn test_add_zero_zero() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.into_inet_program();
+  let mut program = ast.into_inet_program(true);
   eprintln!("{:#?}", program.net);
   assert_eq!(program.net.scan_active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
@@ -161,7 +161,7 @@ fn test_reduce_inet_basic() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.into_inet_program();
+  let mut program = ast.into_inet_program(true);
   assert_eq!(program.net.scan_active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   assert!(!program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
@@ -183,7 +183,7 @@ fn test_reduce_inet_ctor_era() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.into_inet_program();
+  let mut program = ast.into_inet_program(true);
   assert_eq!(program.net.scan_active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
@@ -201,18 +201,18 @@ fn test_reduce_inet_ctor_res_direct() -> IvmResult<()> {
   let src = "
     agent A(a, b)
     agent B(a, b)
-    agent Res
+    agent E
     rule A(e, f) ~ B(g, h) = e ~ g, f ~ h
-    init A(root, i) ~ B(j, h), i ~ h, j ~ Res
+    init A(root, i) ~ B(j, h), i ~ h, j ~ E
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.into_inet_program();
+  let mut program = ast.into_inet_program(true);
   for step in 0 .. {
     let result = program.read_back();
     eprintln!("{step:2}: {result}");
     if !program.net.scan_active_pairs_and_reduce_step(&program.rule_book) {
-      assert_eq!(result, "root ~ Res");
+      assert_eq!(result, "root ~ E");
       break;
     }
   }
@@ -224,23 +224,23 @@ fn test_subnet_root_node_self_links() -> IvmResult<()> {
   let src = "
     agent A(a, b)
     agent B(a, b)
-    agent Res
+    agent E
     agent SubnetPort1
     agent SubnetPort3
 
     // The subnet root node will have self-links: [(0, 2), (0, 3), (0, 0), (0, 1)]
     rule A(e, f) ~ B(g, h) = e ~ g, f ~ h
 
-    init A(root, SubnetPort1) ~ B(j, SubnetPort3), j ~ Res
+    init A(root, SubnetPort1) ~ B(j, SubnetPort3), j ~ E
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.into_inet_program();
+  let mut program = ast.into_inet_program(true);
   for step in 0 .. {
     let result = program.read_back();
     eprintln!("{step:2}: {result}");
     if !program.net.scan_active_pairs_and_reduce_step(&program.rule_book) {
-      assert_eq!(result, "root ~ Res, SubnetPort1 ~ SubnetPort3");
+      assert_eq!(result, "root ~ E, SubnetPort1 ~ SubnetPort3");
       break;
     }
   }
@@ -253,19 +253,19 @@ fn test_reduce_inet_link_pair_intermediary() -> IvmResult<()> {
     agent A(a, b)
     agent B(a, b)
     agent Tmp(a)
-    agent Res
+    agent E
     rule A(e, f) ~ B(g, h) = Tmp(e) ~ g, f ~ h
-    rule Tmp(a) ~ Res = a ~ Res
-    init A(root, i) ~ B(j, h), i ~ h, j ~ Res
+    rule Tmp(a) ~ E = a ~ E
+    init A(root, i) ~ B(j, h), i ~ h, j ~ E
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.into_inet_program();
+  let mut program = ast.into_inet_program(true);
   for step in 0 .. {
     let result = program.read_back();
     eprintln!("{step:2}: {result}");
     if !program.net.scan_active_pairs_and_reduce_step(&program.rule_book) {
-      assert_eq!(result, "root ~ Res");
+      assert_eq!(result, "root ~ E");
       break;
     }
   }
@@ -280,7 +280,7 @@ fn test_reduce_inet_link_self_principal() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.into_inet_program();
+  let mut program = ast.into_inet_program(true);
   assert_eq!(program.net.scan_active_pairs().len(), 0, "{}\n{:#?}", program.ast, program.net);
   assert!(!program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   assert_eq!(program.read_back(), "A(root, _1) ~ _1");
@@ -296,7 +296,7 @@ fn test_prevent_self_inlining() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.into_inet_program();
+  let mut program = ast.into_inet_program(true);
   assert_eq!(program.net.scan_active_pairs().len(), 0, "{}\n{:#?}", program.ast, program.net);
   assert!(!program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   assert_eq!(program.read_back(), "A(root, B(_2, _2, _4)) ~ _4");
@@ -313,7 +313,7 @@ fn test_reduce_inet_link_self_aux() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.into_inet_program();
+  let mut program = ast.into_inet_program(true);
   assert_eq!(program.net.scan_active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   assert!(!program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
@@ -331,7 +331,7 @@ fn test_reduce_inet_link_self_double() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.into_inet_program();
+  let mut program = ast.into_inet_program(true);
   assert_eq!(program.net.scan_active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   assert!(!program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
@@ -350,7 +350,7 @@ fn test_reduce_inet_link_pair_single() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.into_inet_program();
+  let mut program = ast.into_inet_program(true);
   assert_eq!(program.net.scan_active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   assert!(!program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
@@ -368,7 +368,7 @@ fn test_reduce_inet_link_pair_double() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.into_inet_program();
+  let mut program = ast.into_inet_program(true);
   assert_eq!(program.net.scan_active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   assert!(!program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
@@ -384,7 +384,7 @@ fn test_inet_validate_basic() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.into_inet_program();
+  let mut program = ast.into_inet_program(true);
   program.reduce();
   assert_eq!(program.read_back(), "root ~ A");
   Ok(())
@@ -399,7 +399,7 @@ fn test_inet_validate() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.into_inet_program();
+  let mut program = ast.into_inet_program(true);
   program.reduce();
   assert_eq!(program.read_back(), "root ~ A, B(_0, _0) ~ B(_2, _2), B(_4, _5) ~ B(_5, _4)");
   Ok(())
@@ -417,7 +417,7 @@ fn test_inet_validate_transitive_connections() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.into_inet_program();
+  let mut program = ast.into_inet_program(true);
   program.reduce();
   assert_eq!(program.read_back(), "root ~ B, C ~ A");
   Ok(())
@@ -444,7 +444,7 @@ fn test_inet_validate_transitive_connections_generated() -> IvmResult<()> {
     );
     let ast = Ast::parse(src)?;
     let ast = ast.validate(src)?;
-    let mut program = ast.into_inet_program();
+    let mut program = ast.into_inet_program(true);
     program.reduce();
     assert_eq!(program.read_back(), "root ~ A");
   }
@@ -481,7 +481,7 @@ fn test_read_back() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.into_inet_program();
+  let mut program = ast.into_inet_program(true);
   program.reduce();
   assert_eq!(program.read_back(), "root ~ Succ(Succ(Succ(Succ(Zero))))");
   Ok(())
@@ -567,7 +567,7 @@ fn test_unary_arith() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.into_inet_program();
+  let mut program = ast.into_inet_program(true);
   program.reduce();
   let result = program.read_back();
   assert_eq!(result, "root ~ T");
@@ -630,7 +630,7 @@ fn test_lambda() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.into_inet_program();
+  let mut program = ast.into_inet_program(true);
   for step in 0 .. {
     let result = program.read_back();
     eprintln!("{step:2}: {result}");
@@ -647,7 +647,7 @@ fn test_sum() -> IvmResult<()> {
   let src = include_str!("../examples/sum.ivm");
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.into_inet_program();
+  let mut program = ast.into_inet_program(true);
   program.reduce();
   let result = program.read_back();
 
@@ -666,7 +666,7 @@ fn test_treesum() -> IvmResult<()> {
   let src = &src.replace("{n}", &nat(n));
   let ast = Ast::parse(src).unwrap();
   let ast = ast.validate(src).unwrap();
-  let mut program = ast.into_inet_program();
+  let mut program = ast.into_inet_program(true);
   program.reduce();
   let result = program.read_back();
   let res = nat(1 << n);
@@ -684,5 +684,196 @@ fn test_rule_rhs_reduction_doesnt_terminate() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   assert!(ast.validate(src).is_ok());
+  Ok(())
+}
+
+#[test]
+fn test_active_pair_candidates_inside_subnet() -> IvmResult<()> {
+  let src = "
+    agent A(a, b)
+    agent B(a, b)
+    agent Tmp(a)
+    agent E
+    rule A(e, f) ~ B(g, h) = Tmp(e) ~ g, Tmp(f) ~ Tmp(h)
+    rule Tmp(a) ~ E = a ~ E
+    rule Tmp(a) ~ Tmp(b) = a ~ b
+    init A(root, i) ~ B(j, h), i ~ h, j ~ E
+  ";
+  let ast = Ast::parse(src)?;
+  let ast = ast.validate(src)?;
+  let agent_id_a = *ast.agent_name_to_id.get("A").unwrap();
+  let agent_id_b = *ast.agent_name_to_id.get("B").unwrap();
+  let mut program = ast.into_inet_program(false);
+
+  let rule_rhs = program.rule_book.get_rule_for_agents((agent_id_a, agent_id_b)).unwrap();
+  let active_pair_candidates = &rule_rhs.active_pair_candidates_after_inserting_subnet;
+  assert_eq!(
+    *active_pair_candidates,
+    rule_rhs.subnet.active_pair_candidates_after_inserting_subnet(&program.rule_book)
+  );
+  assert_eq!(active_pair_candidates.active_pairs_inside_subnet, vec![(2, 3)]);
+  assert_eq!(
+    active_pair_candidates.active_pair_candidates_across_subnet_boundary,
+    vec![1],
+    "{:#?}",
+    rule_rhs.subnet
+  );
+  assert_eq!(active_pair_candidates.active_pair_candidates_outside_subnet, vec![]);
+
+  program.rule_book.finalize(&program.agent_id_to_name, true);
+
+  let rule_rhs = program.rule_book.get_rule_for_agents((agent_id_a, agent_id_b)).unwrap();
+  let active_pair_candidates = &rule_rhs.active_pair_candidates_after_inserting_subnet;
+  assert_eq!(
+    *active_pair_candidates,
+    rule_rhs.subnet.active_pair_candidates_after_inserting_subnet(&program.rule_book)
+  );
+  // The active pair `Tmp(f) ~ Tmp(h)` was reduced to `f ~ h` and is no longer inside the subnet.
+  assert_eq!(active_pair_candidates.active_pairs_inside_subnet, vec![]);
+  assert_eq!(
+    active_pair_candidates.active_pair_candidates_across_subnet_boundary,
+    vec![1],
+    "{:#?}",
+    rule_rhs.subnet
+  );
+  // But now `f ~ h` is a candidate for an active pair outside the subnet
+  assert_eq!(active_pair_candidates.active_pair_candidates_outside_subnet, vec![(1, 3)]);
+
+  program.reduce();
+  assert_eq!(program.read_back(), "root ~ E");
+  Ok(())
+}
+
+#[test]
+fn test_active_pair_candidates_across_subnet_boundary() -> IvmResult<()> {
+  let src = "
+    agent A(a, b)
+    agent B(a, b)
+    agent Tmp(a)
+    agent E
+    rule A(e, f) ~ B(g, h) = Tmp(e) ~ g, f ~ h
+    rule Tmp(a) ~ E = a ~ E
+    init A(root, i) ~ B(j, h), i ~ h, j ~ E
+  ";
+  let ast = Ast::parse(src)?;
+  let ast = ast.validate(src)?;
+  let agent_id_a = *ast.agent_name_to_id.get("A").unwrap();
+  let agent_id_b = *ast.agent_name_to_id.get("B").unwrap();
+  let mut program = ast.into_inet_program(false);
+
+  let rule_rhs = program.rule_book.get_rule_for_agents((agent_id_a, agent_id_b)).unwrap();
+  let active_pair_candidates = &rule_rhs.active_pair_candidates_after_inserting_subnet;
+
+  assert_eq!(
+    *active_pair_candidates,
+    rule_rhs.subnet.active_pair_candidates_after_inserting_subnet(&program.rule_book)
+  );
+
+  assert_eq!(active_pair_candidates.active_pairs_inside_subnet, vec![]);
+  assert_eq!(
+    active_pair_candidates.active_pair_candidates_across_subnet_boundary,
+    vec![1],
+    "{:#?}",
+    rule_rhs.subnet
+  );
+  assert_eq!(active_pair_candidates.active_pair_candidates_outside_subnet, vec![(1, 3)]);
+
+  program.reduce();
+  assert_eq!(program.read_back(), "root ~ E");
+  Ok(())
+}
+
+#[test]
+fn test_active_pair_candidates_outside_subnet_circle() -> IvmResult<()> {
+  let src = "
+    agent A(a, b)
+    agent B(a, b)
+    agent E
+    rule A(e, f) ~ B(g, h) = e ~ g, f ~ h
+    init A(a, a) ~ B(b, b), root ~ E
+  ";
+  let ast = Ast::parse(src)?;
+  let ast = ast.validate(src)?;
+  let agent_id_a = *ast.agent_name_to_id.get("A").unwrap();
+  let agent_id_b = *ast.agent_name_to_id.get("B").unwrap();
+  let mut program = ast.into_inet_program(false);
+
+  let rule_rhs = program.rule_book.get_rule_for_agents((agent_id_a, agent_id_b)).unwrap();
+  let active_pair_candidates = &rule_rhs.active_pair_candidates_after_inserting_subnet;
+  assert_eq!(active_pair_candidates.active_pairs_inside_subnet, vec![]);
+  assert_eq!(active_pair_candidates.active_pair_candidates_across_subnet_boundary, vec![]);
+  assert_eq!(active_pair_candidates.active_pair_candidates_outside_subnet, vec![(0, 2), (1, 3)]);
+
+  program.reduce();
+  assert_eq!(program.read_back(), "root ~ E");
+  Ok(())
+}
+
+#[test]
+fn test_active_pair_candidates_outside_subnet_wiring() -> IvmResult<()> {
+  let src = "
+    agent A(a, b)
+    agent B(a, b)
+    agent C(c)
+    agent E
+    rule A(e, f) ~ B(g, h) = e ~ g, f ~ C(w), C(w) ~ h
+    rule C(a) ~ C(b) = a ~ b
+    init A(a, a) ~ B(b, b), root ~ E
+  ";
+  let ast = Ast::parse(src)?;
+  let ast = ast.validate(src)?;
+  let agent_id_a = *ast.agent_name_to_id.get("A").unwrap();
+  let agent_id_b = *ast.agent_name_to_id.get("B").unwrap();
+  let agent_id_c = *ast.agent_name_to_id.get("C").unwrap();
+  let mut program = ast.into_inet_program(false);
+  // let mut program = ast.into_inet_program(true);
+
+  let rule_rhs = program.rule_book.get_rule_for_agents((agent_id_a, agent_id_b)).unwrap();
+  let active_pair_candidates = &rule_rhs.active_pair_candidates_after_inserting_subnet;
+  assert_eq!(active_pair_candidates.active_pairs_inside_subnet, vec![]);
+  assert_eq!(active_pair_candidates.active_pair_candidates_across_subnet_boundary, vec![1, 2]);
+  assert_eq!(active_pair_candidates.active_pair_candidates_outside_subnet, vec![(0, 2)]);
+
+  let rule_rhs = program.rule_book.get_rule_for_agents((agent_id_c, agent_id_c)).unwrap();
+  let active_pair_candidates = &rule_rhs.active_pair_candidates_after_inserting_subnet;
+  assert_eq!(active_pair_candidates.active_pairs_inside_subnet, vec![]);
+  assert_eq!(active_pair_candidates.active_pair_candidates_across_subnet_boundary, vec![]);
+  assert_eq!(active_pair_candidates.active_pair_candidates_outside_subnet, vec![(0, 1)]);
+
+  program.reduce();
+  assert_eq!(program.read_back(), "root ~ E");
+  Ok(())
+}
+
+#[test]
+fn test_active_pair_candidates_outside_subnet_intermediary() -> IvmResult<()> {
+  let src = "
+    agent A(a, b)
+    agent B(a, b)
+    agent Tmp(a)
+    agent E
+    rule A(e, f) ~ B(g, h) = Tmp(e) ~ g, f ~ h
+    rule Tmp(a) ~ E = a ~ E
+    init A(root, w) ~ B(E, w)
+  ";
+  let ast = Ast::parse(src)?;
+  let ast = ast.validate(src)?;
+  let agent_id_a = *ast.agent_name_to_id.get("A").unwrap();
+  let agent_id_b = *ast.agent_name_to_id.get("B").unwrap();
+  let mut program = ast.into_inet_program(true);
+
+  let rule_rhs = program.rule_book.get_rule_for_agents((agent_id_a, agent_id_b)).unwrap();
+  let active_pair_candidates = &rule_rhs.active_pair_candidates_after_inserting_subnet;
+  assert_eq!(active_pair_candidates.active_pairs_inside_subnet, vec![]);
+  assert_eq!(
+    active_pair_candidates.active_pair_candidates_across_subnet_boundary,
+    vec![1],
+    "{:#?}",
+    rule_rhs.subnet
+  );
+  assert_eq!(active_pair_candidates.active_pair_candidates_outside_subnet, vec![(1, 3)]);
+
+  program.reduce();
+  assert_eq!(program.read_back(), "root ~ E");
   Ok(())
 }

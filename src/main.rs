@@ -20,7 +20,7 @@ fn main() -> Result<()> {
   let src = &fs::read_to_string(&args[1])?;
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.into_inet_program();
+  let mut program = ast.into_inet_program(true);
 
   /* println!("{}", program.read_back());
   let mut reduction_count = 0;

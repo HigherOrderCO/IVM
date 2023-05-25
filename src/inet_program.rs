@@ -12,7 +12,7 @@ pub struct INetProgram {
   pub ast: Ast, // Not necessary for reduction, but useful for debugging
   pub net: INet,
   pub rule_book: RuleBook,
-  agent_id_to_name: HashMap<AgentId, AgentName>,
+  pub(crate) agent_id_to_name: HashMap<AgentId, AgentName>,
 }
 
 impl INetProgram {

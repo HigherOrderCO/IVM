@@ -153,6 +153,7 @@ impl Ast {
     /// Check linearity restriction (each port must be referenced exactly twice)
     /// Check that each agent usage has correct number of ports matching its declaration
     /// `rule_src` is used for error messages, pass `None` when validating `init` connections
+    /// Returns false if the connections reference non-existing agents
     fn validate_connections(
       errors: &mut ProgramErrors,
       span: SimpleSpan,
@@ -161,12 +162,13 @@ impl Ast {
       mut port_name_occurrences: HashMap<PortName, usize>,
       agent_arity: &HashMap<&AgentName, usize>,
       agent_usages: &mut HashMap<&AgentName, usize>,
-    ) {
+    ) -> bool {
+      let mut all_referenced_agents_exist = true;
       // Check agent arity and count port occurrences
       process_agents_and_ports(
         connections,
         |agent| {
-          validate_agent_usage(errors, span, agent, agent_arity, agent_usages);
+          all_referenced_agents_exist &= validate_agent_usage(errors, span, agent, agent_arity, agent_usages);
         },
         |port_name: &PortName| {
           let occurrences = port_name_occurrences.entry(port_name.to_owned()).or_insert(0);
@@ -197,6 +199,8 @@ impl Ast {
           }
         }
       }
+
+      all_referenced_agents_exist
     }
 
     let mut errors = ProgramErrors::new();
@@ -256,7 +260,7 @@ impl Ast {
 
       // Validate LHS
       let ActivePair { lhs, rhs } = active_pair;
-      let active_pair_agents_exist =
+      let mut all_agents_referenced_in_rule_exist =
         validate_agent_usage(&mut errors, span, lhs, &agent_arity, &mut agent_usages_in_rule_active_pairs)
           && validate_agent_usage(
             &mut errors,
@@ -290,7 +294,7 @@ impl Ast {
       let port_name_occurrences = port_names_in_active_pair.map(|port| (port, 1)).collect::<HashMap<_, _>>();
 
       // Validate RHS
-      validate_connections(
+      all_agents_referenced_in_rule_exist &= validate_connections(
         &mut errors,
         span,
         true,
@@ -301,12 +305,11 @@ impl Ast {
       );
 
       // Add rule to rule book
-      if active_pair_agents_exist {
+      if all_agents_referenced_in_rule_exist {
         rule_book.insert_rule(rule, rule_src, &agent_name_to_id, &mut errors);
       }
     }
     let agent_id_to_name = agent_name_to_id.iter().map(|(name, id)| (*id, name.clone())).collect();
-    rule_book.reduce_rule_rhs_subnets(&agent_id_to_name);
 
     // We validated the connections of all rules' RHS, now we validate the `init` connections
     validate_connections(
@@ -353,8 +356,8 @@ pub struct ValidatedAst {
 
 impl ValidatedAst {
   /// Generate an `INetProgram` from a `ValidatedAst`
-  pub fn into_inet_program(self) -> INetProgram {
-    let Self { ast, rule_book, agent_name_to_id, agent_id_to_name } = self;
+  pub fn into_inet_program(self, reduce_rule_rhs_subnets: bool) -> INetProgram {
+    let Self { ast, mut rule_book, agent_name_to_id, agent_id_to_name } = self;
 
     let mut net = INet::default();
 
@@ -371,6 +374,8 @@ impl ValidatedAst {
     if cfg!(test) {
       net.validate(false);
     }
+
+    rule_book.finalize(&agent_id_to_name, reduce_rule_rhs_subnets);
     INetProgram::new(ast, net, rule_book, agent_id_to_name)
   }
 }
