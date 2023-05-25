@@ -845,6 +845,43 @@ fn test_active_pair_candidates_outside_subnet_wiring() -> IvmResult<()> {
   Ok(())
 }
 
+/// Like `test_active_pair_candidates_outside_subnet_wiring` but with `A(a, b) ~ B(a, b)`
+#[test]
+fn test_active_pair_candidates_outside_subnet_2c() -> IvmResult<()> {
+  let src = "
+    agent A(a, b)
+    agent B(a, b)
+    agent C(c)
+    agent E
+    rule A(e, f) ~ B(g, h) = e ~ g, f ~ C(w), C(w) ~ h
+    rule C(a) ~ C(b) = a ~ b
+    init A(a, b) ~ B(a, b), root ~ E
+  ";
+  let ast = Ast::parse(src)?;
+  let ast = ast.validate(src)?;
+  let agent_id_a = *ast.agent_name_to_id.get("A").unwrap();
+  let agent_id_b = *ast.agent_name_to_id.get("B").unwrap();
+  let agent_id_c = *ast.agent_name_to_id.get("C").unwrap();
+  let mut program = ast.into_inet_program(false);
+  // let mut program = ast.into_inet_program(true);
+
+  let rule_rhs = program.rule_book.get_rule_for_agents((agent_id_a, agent_id_b)).unwrap();
+  let active_pair_candidates = &rule_rhs.active_pair_candidates_after_inserting_subnet;
+  assert_eq!(active_pair_candidates.active_pairs_inside_subnet, vec![]);
+  assert_eq!(active_pair_candidates.active_pair_candidates_across_subnet_boundary, vec![1, 2]);
+  assert_eq!(active_pair_candidates.active_pair_candidates_outside_subnet, vec![(0, 2)]);
+
+  let rule_rhs = program.rule_book.get_rule_for_agents((agent_id_c, agent_id_c)).unwrap();
+  let active_pair_candidates = &rule_rhs.active_pair_candidates_after_inserting_subnet;
+  assert_eq!(active_pair_candidates.active_pairs_inside_subnet, vec![]);
+  assert_eq!(active_pair_candidates.active_pair_candidates_across_subnet_boundary, vec![]);
+  assert_eq!(active_pair_candidates.active_pair_candidates_outside_subnet, vec![(0, 1)]);
+
+  program.reduce();
+  assert_eq!(program.read_back(), "root ~ E");
+  Ok(())
+}
+
 #[test]
 fn test_active_pair_candidates_outside_subnet_intermediary() -> IvmResult<()> {
   let src = "
