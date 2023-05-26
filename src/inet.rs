@@ -596,7 +596,7 @@ impl INet {
   }
 
   /// Returns the active pairs that can come into existence after inserting a subnet:
-  /// - Field `active_pairs` contains the active pairs that already exist in the subnet,
+  /// - Field `active_pairs_inside_subnet` contains the active pairs that already exist in the subnet,
   ///   which will definitely exist after inserting the subnet (and for which a rule exists)
   /// - Field `nodes_whose_principal_port_points_outside_subnet` contains the indices of nodes
   ///   whose principal port points to a root node port, which can form active pairs with other nodes
@@ -609,11 +609,11 @@ impl INet {
 
     if cfg!(debug_assertions) {
       let mut set = hashbrown::HashSet::new();
-      for &(lhs, rhs) in &active_pairs_inside_subnet {
-        assert!(set.insert(lhs), "Duplicate node in active_pairs: {set:#?}");
-        assert!(set.insert(rhs), "Duplicate node in active_pairs: {set:#?}");
-      }
-      for &node_idx in &nodes_whose_principal_port_points_outside_subnet {
+      for node_idx in active_pairs_inside_subnet
+        .iter()
+        .flat_map(|(lhs, rhs)| [lhs, rhs])
+        .chain(&nodes_whose_principal_port_points_outside_subnet)
+      {
         assert!(set.insert(node_idx), "Duplicate node in active_pairs: {set:#?}");
       }
     }
@@ -627,10 +627,8 @@ impl INet {
       }
     });
 
-    nodes_whose_principal_port_points_outside_subnet.retain(|&node_idx| {
-      rule_book.rule_exists_for_agent_id(self[node_idx].agent_id)
-      // .map(|paired_agent_ids| (node_idx, paired_agent_ids))
-    });
+    nodes_whose_principal_port_points_outside_subnet
+      .retain(|&node_idx| rule_book.rule_exists_for_agent_id(self[node_idx].agent_id));
 
     ActivePairCandidates { active_pairs_inside_subnet, nodes_whose_principal_port_points_outside_subnet }
   }
@@ -811,6 +809,9 @@ pub struct ReuseableSubnetData {
 }
 
 impl ReuseableSubnetData {
+  /// Map a node index in the subnet to a node index in the outer net.
+  /// Used after inserting a rule's RHS subnet during rewrite,
+  /// to determine node indices of new active pairs.
   fn map_node_idx_to_outer_net(&self, node_idx: NodeIdx) -> NodeIdx {
     unsafe { *self.inet_subnet_node_idx_to_main_node_idx.get_unchecked(node_idx) }
   }
