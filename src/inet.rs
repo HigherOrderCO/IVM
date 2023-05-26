@@ -8,7 +8,6 @@ use crate::{
   util::sort_tuple,
 };
 use hashbrown::HashMap;
-use smallvec::SmallVec;
 use std::{
   cmp::Reverse,
   collections::VecDeque,
@@ -20,7 +19,7 @@ use std::{
 pub type NodeIdx = usize;
 pub type PortIdx = usize;
 
-type PortVec = SmallVec<[NodePort; 4]>; // SmallVec to avoid heap allocation for small port counts
+type PortVec = Vec<NodePort>;
 
 /// A node in the INet
 #[derive(Debug, Clone, Default)]
