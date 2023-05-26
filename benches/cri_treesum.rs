@@ -1,28 +1,41 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use ivm::parser::ast::Ast;
+use ivm::{inet_program::INetProgram, parser::ast::Ast};
 
-fn criterion_benchmark(c: &mut Criterion) {
-  fn nat(n: usize) -> String {
-    if n == 0 { "Zero".to_string() } else { format!("Succ({})", nat(n - 1)) }
-  }
+fn nat(n: usize) -> String {
+  if n == 0 { "Zero".to_string() } else { format!("Succ({})", nat(n - 1)) }
+}
 
-  let n = 3;
+fn setup(n: usize) -> INetProgram {
   // let src = include_str!("treesum.ivm");
   let src = &std::fs::read_to_string("./benches/treesum.ivm").unwrap();
   let src = &src.replace("{n}", &nat(n));
   let ast = Ast::parse(src).unwrap();
   let ast = ast.validate(src).unwrap();
-  let program = ast.into_inet_program(true);
-  c.bench_function(&format!("treesum {n}"), |b| {
-    b.iter(|| {
-      let mut program = black_box(program.clone());
-      program.reduce();
-      /* let result = program.read_back();
-      let res = nat(1 << n);
-      assert_eq!(result, format!("root ~ {res}")); */
-    })
-  });
+  let reduce_rule_rhs_subnets = true;
+  ast.into_inet_program(reduce_rule_rhs_subnets)
 }
 
-criterion_group!(benches, criterion_benchmark);
+fn run(mut program: INetProgram) {
+  program.reduce();
+  /* let result = program.read_back();
+  let res = nat(1 << n);
+  assert_eq!(result, format!("root ~ {res}")); */
+}
+
+const SHORT_N: usize = 3;
+const LONG_N: usize = 18;
+
+fn cri_benchmark_short(c: &mut Criterion) {
+  let n = SHORT_N;
+  let program = setup(black_box(n));
+  c.bench_function(&format!("treesum {n}"), |b| b.iter(|| run(black_box(program.clone()))));
+}
+
+fn cri_benchmark_long(c: &mut Criterion) {
+  let n = LONG_N;
+  let program = setup(black_box(n));
+  c.bench_function(&format!("treesum {n}"), |b| b.iter(|| run(black_box(program.clone()))));
+}
+
+criterion_group!(benches, cri_benchmark_short, cri_benchmark_long);
 criterion_main!(benches);
