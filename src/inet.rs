@@ -245,8 +245,8 @@ impl INet {
 
     // Add all connectors of all connections to `deferred_port_links`
     for Connection { lhs, rhs } in connections {
-      let lhs = self.add_connector(&lhs, &mut deferred_port_links, agent_name_to_id, &mut created_nodes);
-      let rhs = self.add_connector(&rhs, &mut deferred_port_links, agent_name_to_id, &mut created_nodes);
+      let lhs = self.add_connector(lhs, &mut deferred_port_links, agent_name_to_id, &mut created_nodes);
+      let rhs = self.add_connector(rhs, &mut deferred_port_links, agent_name_to_id, &mut created_nodes);
       deferred_port_links.push([lhs, rhs]);
     }
 
@@ -517,10 +517,8 @@ impl INet {
     subnet_node_idx_to_main_node_idx.extend(subnet.nodes.iter().map(|node| {
       debug_assert!(node.used); // Rule RHS subnet must have all unused nodes removed
 
-      // Create a new node in `self` for each node in `subnet`
-      let node_idx = self.new_node(node.agent_id, node.ports.len());
-
-      node_idx
+      // Create a new node in `self` for each node in `subnet` and return its index
+      self.new_node(node.agent_id, node.ports.len())
     }));
 
     // Copy mapped ports using new node indices
@@ -586,36 +584,27 @@ impl INet {
   /// Returns the active pairs that can come into existence after inserting a subnet,
   /// pass-through-linking through its root node and removing it.
   /// In other words, returns indices of nodes whose principal port points to a root node port.
-  fn active_pair_candidates_across_subnet_boundary(&self) -> (NodeIndices, Vec<(PortIdx, PortIdx)>) {
-    let mut active_pair_candidates_across_subnet_boundary = vec![];
-    let mut active_pair_candidates_outside_subnet = vec![];
-    for (root_port_idx, &target) in self[ROOT_NODE_IDX].ports.iter().enumerate() {
-      if target.node_idx == ROOT_NODE_IDX {
-        // Prevent duplicates
-        if root_port_idx < target.port_idx {
-          active_pair_candidates_outside_subnet.push((root_port_idx, target.port_idx));
-        }
-      } else {
-        if target.port_idx == 0 {
-          active_pair_candidates_across_subnet_boundary.push(target.node_idx);
-          // TODO: candidates.push((target.node_idx, root_port_idx));
-        }
+  fn nodes_whose_principal_port_points_outside_subnet(&self) -> NodeIndices {
+    let mut nodes_whose_principal_port_points_outside_subnet = vec![];
+    for &target in &self[ROOT_NODE_IDX].ports {
+      if target.node_idx != ROOT_NODE_IDX && target.port_idx == 0 {
+        nodes_whose_principal_port_points_outside_subnet.push(target.node_idx);
       }
     }
-    (active_pair_candidates_across_subnet_boundary, active_pair_candidates_outside_subnet)
+    nodes_whose_principal_port_points_outside_subnet
   }
 
   /// Returns the active pairs that can come into existence after inserting a subnet:
   /// - Field `active_pairs` contains the active pairs that already exist in the subnet,
   ///   which will definitely exist after inserting the subnet (and for which a rule exists)
-  /// - Field `active_pair_candidates_across_subnet_boundary` contains the indices of nodes
+  /// - Field `nodes_whose_principal_port_points_outside_subnet` contains the indices of nodes
   ///   whose principal port points to a root node port, which can form active pairs with other nodes
   ///   whose principal port points to aux ports of an active pair that gets rewritten.
   ///   So these are not definitive active pair nodes, but they could form active pairs after a rewrite.
   pub fn active_pair_candidates_after_inserting_subnet(&self, rule_book: &RuleBook) -> ActivePairCandidates {
     let mut active_pairs_inside_subnet = self.scan_active_pairs();
-    let (mut active_pair_candidates_across_subnet_boundary, active_pair_candidates_outside_subnet) =
-      self.active_pair_candidates_across_subnet_boundary();
+    let mut nodes_whose_principal_port_points_outside_subnet =
+      self.nodes_whose_principal_port_points_outside_subnet();
 
     if cfg!(debug_assertions) {
       let mut set = hashbrown::HashSet::new();
@@ -623,7 +612,7 @@ impl INet {
         assert!(set.insert(lhs), "Duplicate node in active_pairs: {set:#?}");
         assert!(set.insert(rhs), "Duplicate node in active_pairs: {set:#?}");
       }
-      for &node_idx in &active_pair_candidates_across_subnet_boundary {
+      for &node_idx in &nodes_whose_principal_port_points_outside_subnet {
         assert!(set.insert(node_idx), "Duplicate node in active_pairs: {set:#?}");
       }
     }
@@ -637,16 +626,12 @@ impl INet {
       }
     });
 
-    active_pair_candidates_across_subnet_boundary.retain(|&node_idx| {
+    nodes_whose_principal_port_points_outside_subnet.retain(|&node_idx| {
       rule_book.rule_exists_for_agent_id(self[node_idx].agent_id)
       // .map(|paired_agent_ids| (node_idx, paired_agent_ids))
     });
 
-    ActivePairCandidates {
-      active_pairs_inside_subnet,
-      nodes_whose_principal_port_points_outside_subnet: active_pair_candidates_across_subnet_boundary,
-      active_pair_candidates_outside_subnet,
-    }
+    ActivePairCandidates { active_pairs_inside_subnet, nodes_whose_principal_port_points_outside_subnet }
   }
 
   /// Perform one reduction step:
@@ -863,10 +848,6 @@ pub struct ActivePairCandidates {
   /// Nodes inside subnet whose principal port points to a root node port such that
   /// it can form an active pair after a rewrite
   pub nodes_whose_principal_port_points_outside_subnet: NodeIndices,
-
-  /// Self-links inside subnet root node, such that two external nodes can form active pair after rewrite
-  /// E.g. in `rule Sub(ret, a) ~ Zero = ret ~ a`
-  pub active_pair_candidates_outside_subnet: Vec<(PortIdx, PortIdx)>,
 }
 
 // Indexing utils to allow indexing an INet with a NodeIdx and NodePort

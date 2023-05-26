@@ -271,8 +271,8 @@ impl Ast {
           );
 
       // Ensure that sets of port names in LHS and RHS of active pair are disjoint
-      let port_names_in_lhs = validate_agent_port_references(&mut errors, span, "LHS", &lhs);
-      let port_names_in_rhs = validate_agent_port_references(&mut errors, span, "RHS", &rhs);
+      let port_names_in_lhs = validate_agent_port_references(&mut errors, span, "LHS", lhs);
+      let port_names_in_rhs = validate_agent_port_references(&mut errors, span, "RHS", rhs);
 
       // Reject duplicate port names in active pair
       // E.g. A(c) ~ B(c) is invalid, port names in active pair must be distinct

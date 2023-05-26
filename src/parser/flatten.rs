@@ -81,7 +81,7 @@ pub fn unflatten_connections(
         match connector {
           Connector::Agent(Agent { agent, ports }) => NestedConnector::Agent(NestedAgent {
             agent,
-            ports: ports.into_iter().map(|port| NestedConnector::Port(port)).collect(),
+            ports: ports.into_iter().map(NestedConnector::Port).collect(),
           }),
           Connector::Port(port) => NestedConnector::Port(port),
         }

@@ -118,7 +118,8 @@ impl Ast {
 
     let definition = agent_def.or(rule_def);
 
-    let ast = definition
+    // Final AST parser
+    definition
       .repeated()
       .at_least(1)
       .collect::<Vec<_>>()
@@ -150,9 +151,7 @@ impl Ast {
         }
 
         Ast { agents, rules, init: Spanned { span: init_span, val: init_connections } }
-      });
-
-    ast
+      })
   }
 
   pub fn parse(src: &str) -> IvmResult<Self> {

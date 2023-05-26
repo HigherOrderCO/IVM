@@ -6,7 +6,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     if n == 0 { "Zero".to_string() } else { format!("Succ({})", nat(n - 1)) }
   }
 
-  let n = 4;
+  let n = 3;
   // let src = include_str!("treesum.ivm");
   let src = &std::fs::read_to_string("./benches/treesum.ivm").unwrap();
   let src = &src.replace("{n}", &nat(n));

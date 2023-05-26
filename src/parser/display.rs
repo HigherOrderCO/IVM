@@ -71,13 +71,13 @@ pub fn fmt_connections(connections: &[Connection]) -> String {
 impl fmt::Display for ActivePair {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     impl ActivePair {
-      fn to_connection(self) -> Connection {
+      fn into_connection(self) -> Connection {
         let Self { lhs, rhs } = self;
         Connection::new(Connector::Agent(lhs), Connector::Agent(rhs))
       }
     }
 
-    write!(f, "{}", self.clone().to_connection())
+    write!(f, "{}", self.clone().into_connection())
   }
 }
 

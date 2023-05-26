@@ -123,7 +123,7 @@ impl RuleBook {
       subnet,
       active_pair_candidates_after_inserting_subnet,
     };
-    if let Some(_) = self.rules.insert(key, value) {
+    if self.rules.insert(key, value).is_some() {
       errors.push(Rich::custom(*span, format!("Duplicate rule for active pair `{active_pair}`")));
     }
   }
@@ -135,7 +135,7 @@ impl RuleBook {
     self.precompute_active_pair_candidates();
 
     if reduce_rule_rhs_subnets {
-      self.reduce_rule_rhs_subnets(&agent_id_to_name);
+      self.reduce_rule_rhs_subnets(agent_id_to_name);
     }
   }
 
@@ -267,7 +267,7 @@ impl RuleBook {
       sort_tuples_by_fst(((lhs_id, node_idx_lhs), (rhs_id, node_idx_rhs)));
     let key = (lhs_id, rhs_id); // Ordered pair
 
-    self.rules.contains_key(&key).then(|| (node_idx_lhs, node_idx_rhs))
+    self.rules.contains_key(&key).then_some((node_idx_lhs, node_idx_rhs))
   }
 
   /// Returns `true` if a rule exists for the given agent ID on either side of the active pair

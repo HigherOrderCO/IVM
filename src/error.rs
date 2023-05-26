@@ -35,7 +35,7 @@ pub fn pass_output_and_errors_to_result<'a, T>(
 ) -> IvmResult<T> {
   type OutputResult<'a, T> = Result<T, Vec<ProgramError<'a>>>;
 
-  fn output_result<'a, T>(output: Option<T>, errors: ProgramErrors<'a>) -> OutputResult<'a, T> {
+  fn output_result<T>(output: Option<T>, errors: ProgramErrors<'_>) -> OutputResult<'_, T> {
     if errors.is_empty() { output.ok_or(errors) } else { Err(errors) }
   }
 
