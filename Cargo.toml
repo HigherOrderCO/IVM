@@ -35,8 +35,8 @@ hashbrown = "0.13.2"
 itertools = "0.10.5"
 logos = "0.12.0"
 mimalloc-rust = "0.2.1"
-num-integer = "0.1.45"
-vec_map = "0.8.2"
+# num-integer = "0.1.45"
+# vec_map = "0.8.2"
 
 [dev-dependencies]
 criterion = "0.4"

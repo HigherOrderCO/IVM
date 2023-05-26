@@ -1,10 +1,12 @@
 use crate::rule_book::{RuleLhs, RuleRhs};
+use hashbrown::HashMap;
+
+pub type RuleMap = HashMap<RuleLhs, RuleRhs>;
+
+/*
 use derive_new::new;
 use num_integer::div_rem;
 use vec_map::VecMap;
-// use hashbrown::HashMap;
-
-// pub type RuleMap = HashMap<RuleLhs, RuleRhs>;
 
 /// Uses integer keys in the form `lhs_id * agent_count + rhs_id` to map from RuleLhs to RuleRhs
 #[derive(new, Clone)]
@@ -60,3 +62,4 @@ impl RuleMap {
     self.map.extend(iter.into_iter().map(|(key, value)| (Self::map_key(self.agent_count, key), value)));
   }
 }
+*/
