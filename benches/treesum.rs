@@ -12,7 +12,7 @@ fn criterion_benchmark(c: &mut Criterion) {
   let src = &src.replace("{n}", &nat(n));
   let ast = Ast::parse(src).unwrap();
   let ast = ast.validate(src).unwrap();
-  let program = ast.into_inet_program();
+  let program = ast.into_inet_program(true);
   c.bench_function(&format!("treesum {n}"), |b| {
     b.iter(|| {
       let mut program = black_box(program.clone());

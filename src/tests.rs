@@ -713,7 +713,7 @@ fn test_active_pair_candidates_inside_subnet() -> IvmResult<()> {
   );
   assert_eq!(active_pair_candidates.active_pairs_inside_subnet, vec![(2, 3)]);
   assert_eq!(
-    active_pair_candidates.active_pair_candidates_across_subnet_boundary,
+    active_pair_candidates.nodes_whose_principal_port_points_outside_subnet,
     vec![1],
     "{:#?}",
     rule_rhs.subnet
@@ -731,7 +731,7 @@ fn test_active_pair_candidates_inside_subnet() -> IvmResult<()> {
   // The active pair `Tmp(f) ~ Tmp(h)` was reduced to `f ~ h` and is no longer inside the subnet.
   assert_eq!(active_pair_candidates.active_pairs_inside_subnet, vec![]);
   assert_eq!(
-    active_pair_candidates.active_pair_candidates_across_subnet_boundary,
+    active_pair_candidates.nodes_whose_principal_port_points_outside_subnet,
     vec![1],
     "{:#?}",
     rule_rhs.subnet
@@ -771,7 +771,7 @@ fn test_active_pair_candidates_across_subnet_boundary() -> IvmResult<()> {
 
   assert_eq!(active_pair_candidates.active_pairs_inside_subnet, vec![]);
   assert_eq!(
-    active_pair_candidates.active_pair_candidates_across_subnet_boundary,
+    active_pair_candidates.nodes_whose_principal_port_points_outside_subnet,
     vec![1],
     "{:#?}",
     rule_rhs.subnet
@@ -801,7 +801,7 @@ fn test_active_pair_candidates_outside_subnet_circle() -> IvmResult<()> {
   let rule_rhs = program.rule_book.get_rule_for_agents((agent_id_a, agent_id_b)).unwrap();
   let active_pair_candidates = &rule_rhs.active_pair_candidates_after_inserting_subnet;
   assert_eq!(active_pair_candidates.active_pairs_inside_subnet, vec![]);
-  assert_eq!(active_pair_candidates.active_pair_candidates_across_subnet_boundary, vec![]);
+  assert_eq!(active_pair_candidates.nodes_whose_principal_port_points_outside_subnet, vec![]);
   assert_eq!(active_pair_candidates.active_pair_candidates_outside_subnet, vec![(0, 2), (1, 3)]);
 
   program.reduce();
@@ -831,13 +831,13 @@ fn test_active_pair_candidates_outside_subnet_wiring() -> IvmResult<()> {
   let rule_rhs = program.rule_book.get_rule_for_agents((agent_id_a, agent_id_b)).unwrap();
   let active_pair_candidates = &rule_rhs.active_pair_candidates_after_inserting_subnet;
   assert_eq!(active_pair_candidates.active_pairs_inside_subnet, vec![]);
-  assert_eq!(active_pair_candidates.active_pair_candidates_across_subnet_boundary, vec![1, 2]);
+  assert_eq!(active_pair_candidates.nodes_whose_principal_port_points_outside_subnet, vec![1, 2]);
   assert_eq!(active_pair_candidates.active_pair_candidates_outside_subnet, vec![(0, 2)]);
 
   let rule_rhs = program.rule_book.get_rule_for_agents((agent_id_c, agent_id_c)).unwrap();
   let active_pair_candidates = &rule_rhs.active_pair_candidates_after_inserting_subnet;
   assert_eq!(active_pair_candidates.active_pairs_inside_subnet, vec![]);
-  assert_eq!(active_pair_candidates.active_pair_candidates_across_subnet_boundary, vec![]);
+  assert_eq!(active_pair_candidates.nodes_whose_principal_port_points_outside_subnet, vec![]);
   assert_eq!(active_pair_candidates.active_pair_candidates_outside_subnet, vec![(0, 1)]);
 
   program.reduce();
@@ -868,13 +868,13 @@ fn test_active_pair_candidates_outside_subnet_2c() -> IvmResult<()> {
   let rule_rhs = program.rule_book.get_rule_for_agents((agent_id_a, agent_id_b)).unwrap();
   let active_pair_candidates = &rule_rhs.active_pair_candidates_after_inserting_subnet;
   assert_eq!(active_pair_candidates.active_pairs_inside_subnet, vec![]);
-  assert_eq!(active_pair_candidates.active_pair_candidates_across_subnet_boundary, vec![1, 2]);
+  assert_eq!(active_pair_candidates.nodes_whose_principal_port_points_outside_subnet, vec![1, 2]);
   assert_eq!(active_pair_candidates.active_pair_candidates_outside_subnet, vec![(0, 2)]);
 
   let rule_rhs = program.rule_book.get_rule_for_agents((agent_id_c, agent_id_c)).unwrap();
   let active_pair_candidates = &rule_rhs.active_pair_candidates_after_inserting_subnet;
   assert_eq!(active_pair_candidates.active_pairs_inside_subnet, vec![]);
-  assert_eq!(active_pair_candidates.active_pair_candidates_across_subnet_boundary, vec![]);
+  assert_eq!(active_pair_candidates.nodes_whose_principal_port_points_outside_subnet, vec![]);
   assert_eq!(active_pair_candidates.active_pair_candidates_outside_subnet, vec![(0, 1)]);
 
   program.reduce();
@@ -903,7 +903,7 @@ fn test_active_pair_candidates_outside_subnet_intermediary() -> IvmResult<()> {
   let active_pair_candidates = &rule_rhs.active_pair_candidates_after_inserting_subnet;
   assert_eq!(active_pair_candidates.active_pairs_inside_subnet, vec![]);
   assert_eq!(
-    active_pair_candidates.active_pair_candidates_across_subnet_boundary,
+    active_pair_candidates.nodes_whose_principal_port_points_outside_subnet,
     vec![1],
     "{:#?}",
     rule_rhs.subnet

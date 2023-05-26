@@ -371,7 +371,7 @@ impl ValidatedAst {
 
     net.add_connections(&ast.init.val, external_ports, &agent_name_to_id);
 
-    if cfg!(test) {
+    if cfg!(debug_assertions) {
       net.validate(false);
     }
 

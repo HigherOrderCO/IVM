@@ -1,9 +1,9 @@
 use crate::{
   error::ProgramErrors,
-  inet::{ActiveNodePair, ActivePairCandidates, INet, NodeIdx, NodePort, ReuseableSubnetData},
+  inet::{ActiveNodePair, ActivePairCandidates, INet, NodePort, ReuseableSubnetData},
   parser::ast::{ActivePair, AgentName, PortName, Rule, ROOT_NODE_IDX},
   rule_map::RuleMap,
-  util::{sort_tuple, sort_tuples_by_fst},
+  util::sort_tuples_by_fst,
 };
 use chumsky::prelude::Rich;
 use hashbrown::HashMap;
@@ -106,7 +106,7 @@ impl RuleBook {
       subnet[root_node_idx].ports = root_node_ports.into();
 
       let _created_nodes = subnet.add_connections(rule_rhs, external_ports, agent_name_to_id);
-      if cfg!(test) {
+      if cfg!(debug_assertions) {
         subnet.validate(false);
       }
       subnet
@@ -148,23 +148,6 @@ impl RuleBook {
       .map(|(lhs, mut rhs)| {
         rhs.active_pair_candidates_after_inserting_subnet =
           rhs.subnet.active_pair_candidates_after_inserting_subnet(self);
-        // println!("post_process_rule_book: {lhs:?}: {:?}", rhs.active_pair_candidates_after_inserting_subnet);
-
-        let active_pair_candidates_after_inserting_subnet = &rhs.active_pair_candidates_after_inserting_subnet;
-        if cfg!(test)
-        && (!active_pair_candidates_after_inserting_subnet.active_pairs_inside_subnet.is_empty()
-          || !active_pair_candidates_after_inserting_subnet
-            .active_pair_candidates_across_subnet_boundary
-            .is_empty()
-          || !active_pair_candidates_after_inserting_subnet.active_pair_candidates_outside_subnet.is_empty())
-        {
-          println!(
-            "Agents: {:?}, subnet: {:#?}, active_pair_candidates_after_inserting_subnet: {active_pair_candidates_after_inserting_subnet:#?}",
-            lhs,
-            rhs.subnet
-          );
-        }
-
         (lhs, rhs)
       })
       .collect();
@@ -172,7 +155,7 @@ impl RuleBook {
 
   /// Pre-reduce the rule book's RHS sub-nets as an optimization step before running the program.
   /// This must be done after all rules have been inserted.
-  fn reduce_rule_rhs_subnets(&mut self, agent_id_to_name: &HashMap<AgentId, AgentName>) {
+  fn reduce_rule_rhs_subnets(&mut self, _agent_id_to_name: &HashMap<AgentId, AgentName>) {
     /// Maximum number of reduction steps to perform on each rule's RHS sub-net.
     /// If it cannot be reduced in this many steps, the original sub-net is kept.
     /// Because rules' RHS sub-nets are not guaranteed to terminate.
@@ -196,7 +179,7 @@ impl RuleBook {
               |reduction_count| {
                 (reduction_count > 0).then(|| {
                   subnet.remove_unused_nodes();
-                  if cfg!(test) {
+                  if cfg!(debug_assertions) {
                     subnet.validate(false);
                   }
 
@@ -224,26 +207,6 @@ impl RuleBook {
       )
       .collect_vec();
 
-    if cfg!(debug_assertions) {
-      // Print reduced rule subnets
-      let mut reduced_rules = reduced_rules
-        .iter()
-        .map(
-          |(
-            _,
-            RuleRhs { active_pair, root_port_names, subnet, active_pair_candidates_after_inserting_subnet },
-          )| {
-            format!("rule {active_pair} = {}", subnet.read_back(agent_id_to_name, root_port_names))
-            // format!("rule {active_pair} = {}\nactive_pair_candidates_after_inserting_subnet: {active_pair_candidates_after_inserting_subnet:?}\nsubnet: {subnet:?}", subnet.read_back(agent_id_to_name, root_port_names))
-          },
-        )
-        .collect_vec();
-      reduced_rules.sort();
-      if !reduced_rules.is_empty() {
-        println!("Reduced rules: {{\n{}\n}}", reduced_rules.join("\n"));
-      }
-    }
-
     // Overwrite rules with reduced rules
     self.rules.extend(reduced_rules);
   }
@@ -267,19 +230,20 @@ impl RuleBook {
       sort_tuples_by_fst(((lhs_id, lhs_node), (rhs_id, rhs_node)));
     let key = (lhs_id, rhs_id); // Ordered pair
 
-    if let Some(RuleRhs {
-      active_pair,
+    if let Some(&RuleRhs {
+      active_pair: _,
       root_port_names: _,
-      subnet,
-      active_pair_candidates_after_inserting_subnet,
+      ref subnet,
+      ref active_pair_candidates_after_inserting_subnet,
     }) = self.rules.get(&key)
     {
+      let external_ports = &mut reuse.rule_book_external_ports;
+      debug_assert_eq!(*external_ports, vec![]);
+
       // Construct external ports for the rule's RHS sub-net
-      reuse.rule_book_external_ports.extend([lhs_node, rhs_node].into_iter().flat_map(|node| {
+      external_ports.extend([lhs_node, rhs_node].into_iter().flat_map(|node| {
         node.ports.iter().skip(1).copied() // Skip principal port
       }));
-
-      println!("rule {} = {:?}", active_pair, subnet);
 
       net.insert_rule_rhs_subnet(subnet, reuse);
       Some(active_pair_candidates_after_inserting_subnet)
@@ -313,6 +277,8 @@ impl RuleBook {
 
   #[cfg(test)]
   pub(crate) fn get_rule_for_agents(&self, agent_ids: RuleLhs) -> Option<&RuleRhs> {
+    use crate::util::sort_tuple;
+
     self.rules.get(&sort_tuple(agent_ids))
   }
 }

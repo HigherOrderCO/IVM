@@ -8,7 +8,6 @@ use crate::{
   util::sort_tuple,
 };
 use hashbrown::HashMap;
-use itertools::Itertools;
 use smallvec::SmallVec;
 use std::{
   cmp::Reverse,
@@ -322,7 +321,7 @@ impl INet {
     rule_book: &RuleBook,
     reuse: &mut ReuseableRewriteData,
   ) -> bool {
-    // println!("rewrite_active_pair({a}, {b}): {:?}", (&self[a], &self[b]));
+    debug_assert!(a < b, "Expected active pair to be ordered: {:?}", (a, b));
     debug_assert!(
       self[port(a, 0)] == port(b, 0) && self[port(b, 0)] == port(a, 0),
       "Expected active pair: {:?}\n{self:#?}",
@@ -341,8 +340,10 @@ impl INet {
     // (Also note that we don't have to dedup A's and B's candidates, because each node
     // can only be a candidate once because it only has one principal port.)
     // After the rewrite, we add the nodes as candidates that were created during the rewrite.
-    let active_pair_candidate_nodes = &mut reuse.inet_active_pair_candidate_nodes;
-    active_pair_candidate_nodes.extend(
+    let active_pair_candidate_nodes_whose_principal_port_points_into_subnet =
+      &mut reuse.inet_active_pair_candidate_nodes;
+    debug_assert_eq!(*active_pair_candidate_nodes_whose_principal_port_points_into_subnet, vec![]);
+    active_pair_candidate_nodes_whose_principal_port_points_into_subnet.extend(
       self[a]
         .ports
         .iter()
@@ -377,7 +378,7 @@ impl INet {
 
     // Now that the rewrite is done (or no rewrite happened if there was no applicable rule),
     // we can remove the intermediary nodes and link their two wires together into one again.
-    for &node_idx in dbg!(&*intermediary_nodes) {
+    for &node_idx in &*intermediary_nodes {
       let node = &self[node_idx];
       self.link(node[0], node[1]);
       self.free_node(node_idx);
@@ -388,167 +389,30 @@ impl INet {
       self.free_node(a);
       self.free_node(b);
 
-      /* let subnet_node_idx_to_self_node_idx = &reuse.subnet.inet_subnet_node_idx_to_self_node_idx;
+      // Now we compute the new active pairs that came into existence by this rewrite
+
+      let subnet_node_idx_to_main_node_idx = &reuse.subnet.inet_subnet_node_idx_to_main_node_idx;
       let new_active_pairs = &mut reuse.inet_new_active_pairs_created_by_rewrite;
+      debug_assert_eq!(*new_active_pairs, vec![]);
 
-      // Add active pairs between nodes of the inserted subnet
-      new_active_pairs.extend(active_pair_candidates.active_pairs_inside_subnet.iter().map(
-        |&(lhs_node_idx, rhs_node_idx)| {
-          // -1 to skip removed subnet root node
-          // TODO: get_unchecked
-          let (lhs_node_idx, rhs_node_idx) = (
-            subnet_node_idx_to_self_node_idx[lhs_node_idx - 1],
-            subnet_node_idx_to_self_node_idx[rhs_node_idx - 1],
-          );
-          debug_assert!(
-            self[lhs_node_idx].used,
-            "Node {lhs_node_idx} is not used: {:#?}",
-            self[lhs_node_idx]
-          );
-          debug_assert!(
-            self[rhs_node_idx].used,
-            "Node {rhs_node_idx} is not used: {:#?}",
-            self[rhs_node_idx]
-          );
-          debug_assert_eq!(
-            self.node_is_part_of_active_pair(lhs_node_idx),
-            Some(rhs_node_idx),
-            "Expected active pair: {:?}\n{self:#?}",
-            (lhs_node_idx, rhs_node_idx)
-          );
-          (lhs_node_idx, rhs_node_idx)
-        },
-      ));
-
-      // Add active pairs between nodes of the inserted subnet and the rest of the net
-      let active_pair_candidates_across_subnet_boundary = active_pair_candidates
-        .active_pair_candidates_across_subnet_boundary
-        .iter()
-        .filter_map(|&node_idx| {
-          // TODO: get_unchecked
-          let node_idx = subnet_node_idx_to_self_node_idx[node_idx - 1];
-          debug_assert!(self[node_idx].used, "Node {node_idx} is not used: {:#?}", self[node_idx]);
-          self.node_is_part_of_active_pair(node_idx).map(|dst_node_idx| {
-            debug_assert!(
-              self[dst_node_idx].used,
-              "Node {dst_node_idx} is not used: {:#?}",
-              self[dst_node_idx]
-            );
-            sort_tuple((node_idx, dst_node_idx))
-          })
-        })
-        .collect_vec();
-      new_active_pairs.extend(active_pair_candidates_across_subnet_boundary.clone());
-
-      // Add active pairs between nodes that already existed in `self` before the subnet was inserted.
-      // These occur when two ports of the root node are linked together as pass-through link.
-      // E.g. in `rule Sub(ret, a) ~ Zero = ret ~ a`
-      // Then the root node of the subnet contains a self-link: [(0, 1), (1, 0)].
-      // These were previously recorded in `active_pair_candidates_outside_subnet`.
-      // After a rewrite, the nodes of `self` that connect to `ret` and `a` with their principal ports
-      // form a new active pair.
-      let external_ports = &reuse.subnet.rule_book_external_ports;
-      let active_pair_candidates_outside_subnet = active_pair_candidates
-        .active_pair_candidates_outside_subnet
-        .iter()
-        .filter_map(|&(root_node_port_idx1, root_node_port_idx2)| {
-          // TODO: get_unchecked
-          let node_port1 = dbg!(external_ports[root_node_port_idx1]);
-          let node_port2 = dbg!(external_ports[root_node_port_idx2]);
-          let node1 = &self[node_port1.node_idx];
-          let node2 = &self[node_port2.node_idx];
-          if node1.used && node2.used {
-            debug_assert!(
-              self[node_port1.node_idx].used
-                || self[node_port1.node_idx].agent_id == Self::INTERMEDIARY_AGENT_ID,
-              "Node {} is not used. {self:#?}",
-              node_port1.node_idx //, self[node_port1]
-            );
-            debug_assert!(
-              self[node_port2.node_idx].used
-                || self[node_port1.node_idx].agent_id == Self::INTERMEDIARY_AGENT_ID,
-              "Node {} is not used. {self:#?}",
-              node_port2.node_idx //, self[node_port2]
-            );
-            debug_assert_eq!(self[node_port1], node_port2);
-            debug_assert_eq!(self[node_port2], node_port1);
-            let is_active_pair = node_port1.port_idx == 0 && node_port2.port_idx == 0;
-            is_active_pair.then(|| sort_tuple((node_port1.node_idx, node_port2.node_idx)))
-          } else {
-            // The only case when one of the nodes is unused is when both ports point to the
-            // same node and it's an intermediary node.
-            // debug_assert_eq!(node_port1.node_idx, node_port2.node_idx, "{self:#?}");
-            /* debug_assert_eq!(
-              node1.agent_id,
-              Self::INTERMEDIARY_AGENT_ID,
-              "Node {} {self:#?}",
-              node_port1.node_idx
-            );
-            debug_assert_eq!(
-              node2.agent_id,
-              Self::INTERMEDIARY_AGENT_ID,
-              "Node {} {self:#?}",
-              node_port2.node_idx
-            ); */
-            None
-          }
-        })
-        .collect_vec();
-      new_active_pairs.extend(active_pair_candidates_outside_subnet.clone());
-
-      let tmp = active_pair_candidate_nodes
-        .iter()
-        .filter_map(|&node_idx| {
-          debug_assert!(self[node_idx].used, "Node {node_idx} is not used: {:#?}", self[node_idx]);
-          self.node_is_part_of_active_pair(node_idx).map(|dst_node_idx| {
-            debug_assert!(
-              self[dst_node_idx].used,
-              "Node {dst_node_idx} is not used: {:#?}",
-              self[dst_node_idx]
-            );
-            sort_tuple((node_idx, dst_node_idx))
-          })
-        })
-        .collect_vec();
-
-      let tmp2 = tmp.iter().filter(|&&pair| !new_active_pairs.contains(&pair)).copied().collect_vec();
-      if !tmp2.is_empty() {
-        // let external_nodes = external_ports.iter().map(|port| port.node_idx).collect_vec();
-        let external_nodes =
-          external_ports.iter().map(|&port| (port.to_string(), self[port].to_string())).collect_vec();
-        println!(
-          "## {tmp2:?}, external_nodes: {external_nodes:?}, across: {:?}, outside: {:?}",
-          active_pair_candidates_across_subnet_boundary, active_pair_candidates_outside_subnet
+      // These are nodes whose principal port points through the subnet boundary, they could form
+      // an active pair, depending on whether they connect to the other node's principal port.
+      // Note: There are no duplicates in this chained iter, because these sets are disjoint.
+      let active_pair_candidate_nodes =
+        active_pair_candidate_nodes_whose_principal_port_points_into_subnet.iter().chain(
+          active_pair_candidates.nodes_whose_principal_port_points_outside_subnet.iter().map(|&node_idx| {
+            // The node_idx is the index of the node in the subnet, we need to map it to an index in `self`
+            // -1 to skip removed subnet root node
+            // TODO: get_unchecked
+            &subnet_node_idx_to_main_node_idx[node_idx - 1]
+          }),
         );
-      }
-      // new_active_pairs.extend(tmp);
-      debug_assert!(tmp2.is_empty(), "{tmp2:?}");
 
-      new_active_pairs.sort();
-      new_active_pairs.dedup(); */
-
-      /* if cfg!(debug_assertions) {
-        let len_before_dedup = new_active_pairs.len();
-        new_active_pairs.sort();
-        new_active_pairs.dedup();
-        assert_eq!(
-          len_before_dedup,
-          new_active_pairs.len(),
-          "ActivePairCandidates must not contain duplicates"
-        );
-      } */
-
-      // new_active_pairs.clear();
-      let created_nodes = &reuse.subnet.inet_subnet_node_idx_to_self_node_idx;
-
-      // Add nodes created by rewrite as candidates for new active pairs.
-      // There are no duplicates in this chained iter, because these sets are disjoint
-      let active_pair_candidate_nodes = active_pair_candidate_nodes.iter().chain(created_nodes);
-
+      // Add active pairs between nodes of the inserted subnet and nodes that already existed in `self`.
       // Check which of the candidates actually form active pairs.
-      // Sort each pair of node indices so that we can dedup them.
-      // Sort the list of pairs so that we can dedup them.
-      let new_active_pairs = &mut reuse.inet_new_active_pairs_created_by_rewrite;
+      // This can create duplicates, e.g.
+      // if `active_pair_candidate_nodes_whose_principal_port_points_into_subnet` contains (1, 2) and
+      // `nodes_whose_principal_port_points_outside_subnet` contains (2, 1), we dedup the sorted tuples below.
       new_active_pairs.extend(active_pair_candidate_nodes.filter_map(|&node_idx| {
         debug_assert!(self[node_idx].used, "Node {node_idx} is not used: {:#?}", self[node_idx]);
         self.node_is_part_of_active_pair(node_idx).map(|dst_node_idx| {
@@ -560,14 +424,68 @@ impl INet {
           sort_tuple((node_idx, dst_node_idx))
         })
       }));
-      new_active_pairs.sort();
+
+      // Each pair of node indices was sorted so that we can dedup them after sorting
+      new_active_pairs.sort_unstable();
       new_active_pairs.dedup();
+
+      // Add active pairs between nodes of the inserted subnet
+      // These active pairs were already confirmed to exist between nodes of the inserted subnet.
+      // These exist when a rule's RHS subnet could not be reduced within the max number of rewrites.
+      // Note: This cannot add duplicates because `active_pairs_inside_subnet`
+      // and `active_pair_candidate_nodes` are disjoint.
+      if !active_pair_candidates.active_pairs_inside_subnet.is_empty() {
+        new_active_pairs.extend(active_pair_candidates.active_pairs_inside_subnet.iter().map(
+          |&(lhs_node_idx, rhs_node_idx)| {
+            // -1 to skip removed subnet root node
+            // TODO: get_unchecked
+            let (lhs_node_idx, rhs_node_idx) = (
+              subnet_node_idx_to_main_node_idx[lhs_node_idx - 1],
+              subnet_node_idx_to_main_node_idx[rhs_node_idx - 1],
+            );
+            debug_assert!(
+              self[lhs_node_idx].used,
+              "Node {lhs_node_idx} is not used: {:#?}",
+              self[lhs_node_idx]
+            );
+            debug_assert!(
+              self[rhs_node_idx].used,
+              "Node {rhs_node_idx} is not used: {:#?}",
+              self[rhs_node_idx]
+            );
+            debug_assert_eq!(
+              self.node_is_part_of_active_pair(lhs_node_idx),
+              Some(rhs_node_idx),
+              "Expected active pair: {:?}\n{self:#?}",
+              (lhs_node_idx, rhs_node_idx)
+            );
+            let node_indices = (lhs_node_idx, rhs_node_idx);
+            debug_assert_eq!(
+              node_indices,
+              sort_tuple(node_indices),
+              "Expected sorted tuple: {:?}",
+              node_indices
+            );
+            node_indices
+          },
+        ));
+        if cfg!(debug_assertions) {
+          let len_before_dedup = new_active_pairs.len();
+          new_active_pairs.sort_unstable();
+          new_active_pairs.dedup();
+          assert_eq!(
+            len_before_dedup,
+            new_active_pairs.len(),
+            "`active_pair_candidate_nodes` and `active_pairs_inside_subnet` must be disjoint"
+          );
+        }
+      }
       true
     } else {
       false
     };
 
-    if cfg!(test) {
+    if cfg!(debug_assertions) {
       self.validate(true);
     }
     rewrite_happened
@@ -586,16 +504,17 @@ impl INet {
   /// In other words, the ports are indexed left-to-right, after ordering both active pair agent IDs:
   /// So the external ports would be the same if the rule LHS was written as `Y(c, d) ~ X(a, b)`.
   /// (Assuming X's AgentId < Y's AgentId in this example.)
-  /// This function assumes that `reuse.subnet_node_idx_to_self_node_idx` is empty
+  /// This function assumes that `reuse.subnet_node_idx_to_main_node_idx` is empty
   /// and that `reuse.rule_book_external_ports` contains the external ports of the subnet.
-  /// When this function returns, `reuse.inet_subnet_node_idx_to_self_node_idx` contains the node indices
+  /// When this function returns, `reuse.inet_subnet_node_idx_to_main_node_idx` contains the node indices
   /// of the inserted subnet nodes, to enable `rewrite_active_pair` to determine new active pairs.
   pub fn insert_rule_rhs_subnet(&mut self, subnet: &INet, reuse: &mut ReuseableSubnetData) {
     let external_ports = &reuse.rule_book_external_ports;
-    let subnet_node_idx_to_self_node_idx = &mut reuse.inet_subnet_node_idx_to_self_node_idx;
+    let subnet_node_idx_to_main_node_idx = &mut reuse.inet_subnet_node_idx_to_main_node_idx;
+    debug_assert_eq!(*subnet_node_idx_to_main_node_idx, vec![]);
 
     // Copy fields except `ports` from `subnet` node to `self` node and store new node indices
-    subnet_node_idx_to_self_node_idx.extend(subnet.nodes.iter().map(|node| {
+    subnet_node_idx_to_main_node_idx.extend(subnet.nodes.iter().map(|node| {
       debug_assert!(node.used); // Rule RHS subnet must have all unused nodes removed
 
       // Create a new node in `self` for each node in `subnet`
@@ -605,19 +524,19 @@ impl INet {
     }));
 
     // Copy mapped ports using new node indices
-    for (subnet_node, self_node_idx) in subnet.nodes.iter().zip(&*subnet_node_idx_to_self_node_idx) {
+    for (subnet_node, self_node_idx) in subnet.nodes.iter().zip(&*subnet_node_idx_to_main_node_idx) {
       // TODO: get_unchecked_mut
       let self_node = &mut self[*self_node_idx];
       for (subnet_port, self_port) in subnet_node.ports.iter().zip(self_node.ports.iter_mut()) {
         let NodePort { node_idx: subnet_node_idx, port_idx } = *subnet_port;
         // Copy `port_idx` unchanged but map `node_idx` from `subnet` to `self`
-        *self_port = NodePort { node_idx: subnet_node_idx_to_self_node_idx[subnet_node_idx], port_idx };
+        *self_port = NodePort { node_idx: subnet_node_idx_to_main_node_idx[subnet_node_idx], port_idx };
       }
     }
 
     // Pass-through link subnet root node's ports and then remove it, like temporary nodes in `rewrite_active_pair`
     // Remove subnet root node from list of created nodes
-    let subnet_root_node_idx_in_self = subnet_node_idx_to_self_node_idx./* swap_ */remove(ROOT_NODE_IDX);
+    let subnet_root_node_idx_in_self = subnet_node_idx_to_main_node_idx./* swap_ */remove(ROOT_NODE_IDX);
     let subnet_root_node: &Node = &self[subnet_root_node_idx_in_self];
     debug_assert_eq!(subnet_root_node.agent_id, ROOT_AGENT_ID);
     debug_assert_eq!(subnet_root_node.ports.len(), external_ports.len());
@@ -725,7 +644,7 @@ impl INet {
 
     ActivePairCandidates {
       active_pairs_inside_subnet,
-      active_pair_candidates_across_subnet_boundary,
+      nodes_whose_principal_port_points_outside_subnet: active_pair_candidates_across_subnet_boundary,
       active_pair_candidates_outside_subnet,
     }
   }
@@ -902,7 +821,7 @@ struct ReuseableRewriteData {
 #[derive(Default)]
 pub struct ReuseableSubnetData {
   pub rule_book_external_ports: Vec<NodePort>,
-  inet_subnet_node_idx_to_self_node_idx: NodeIndices,
+  inet_subnet_node_idx_to_main_node_idx: NodeIndices,
 }
 
 impl ReuseableRewriteData {
@@ -917,7 +836,7 @@ impl ReuseableRewriteData {
     self.inet_active_pair_candidate_nodes.clear();
     self.inet_intermediary_nodes.clear();
     self.subnet.rule_book_external_ports.clear();
-    self.subnet.inet_subnet_node_idx_to_self_node_idx.clear();
+    self.subnet.inet_subnet_node_idx_to_main_node_idx.clear();
     self.inet_new_active_pairs_created_by_rewrite.clear();
   }
 }
@@ -943,7 +862,7 @@ pub struct ActivePairCandidates {
 
   /// Nodes inside subnet whose principal port points to a root node port such that
   /// it can form an active pair after a rewrite
-  pub active_pair_candidates_across_subnet_boundary: NodeIndices,
+  pub nodes_whose_principal_port_points_outside_subnet: NodeIndices,
 
   /// Self-links inside subnet root node, such that two external nodes can form active pair after rewrite
   /// E.g. in `rule Sub(ret, a) ~ Zero = ret ~ a`
