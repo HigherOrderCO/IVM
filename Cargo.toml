@@ -3,8 +3,28 @@ name = "ivm"
 version = "0.1.0"
 edition = "2021"
 
+[[bench]]
+name = "treesum"
+harness = false
+
+[[bench]]
+name = "iai_treesum"
+harness = false
+
 [profile.dev.package.backtrace]
 opt-level = 3
+
+[profile.release]
+codegen-units = 1
+lto = true
+panic = "abort"
+debug = true
+strip = true
+
+[profile.profiling]
+inherits = "release"
+debug = true
+strip = false
 
 [dependencies]
 ariadne = "0.2.0"
@@ -19,9 +39,6 @@ smallvec = "1.10.0"
 # vec_map = "0.8.2"
 
 [dev-dependencies]
-rand = "0.8.5"
 criterion = "0.4"
-
-[[bench]]
-name = "treesum"
-harness = false
+iai = "0.1"
+rand = "0.8.5"

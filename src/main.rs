@@ -20,7 +20,8 @@ fn main() -> Result<()> {
   let src = &fs::read_to_string(&args[1])?;
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.into_inet_program(true);
+  let reduce_rule_rhs_subnets = true;
+  let mut program = ast.into_inet_program(reduce_rule_rhs_subnets);
 
   /* println!("{}", program.read_back());
   let mut reduction_count = 0;
@@ -37,5 +38,6 @@ fn main() -> Result<()> {
 
   let rps = reduction_count as f64 / elapsed_s;
   println!("{}\n[{reduction_count} R][{elapsed_s:.3} s][{rps:.3} RPS]", program.read_back());
+  // println!("[{reduction_count} R][{elapsed_s:.3} s][{rps:.3} RPS]");
   Ok(())
 }

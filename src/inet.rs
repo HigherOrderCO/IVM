@@ -494,8 +494,9 @@ impl INet {
   /// - Copying ports of `subnet` nodes to the new nodes, translating links using new node indices
   /// - Pass-through-linking the subnet root node's ports to the corresponding ports in `self`
   /// - Removing the subnet root node from `self`
-  /// `external_ports` is a map from external port indices to ports in the `self` net.
-  /// External port indices refer to auxiliary ports in the active pair of the rule LHS:
+  /// The aux ports of the two active pair nodes are mapped to the subnet's root node ports:
+  /// `external_ports` maps subnet root node port indices to ports in the `self` net.
+  /// External (subnet root node) port indices refer to auxiliary ports in the active pair of the rule LHS:
   /// E.g. if the rule LHS is `X(a, b) ~ Y(c, d)`, then `external_ports` contains the ports of `self`
   /// that map to `[a, b, c, d]` (in that order) in the context of the local rewrite.
   /// In other words, the ports are indexed left-to-right, after ordering both active pair agent IDs:
@@ -652,16 +653,13 @@ impl INet {
   /// Only scans the net for active pairs in the beginning. After each rewrite, new active pairs are found by
   /// checking the nodes involved in and adjacent to the rewritten sub-net.
   pub fn reduce(&mut self, rule_book: &RuleBook) -> usize {
-    let reduction_count = self.reduce_in_max_reductions::<{ usize::MAX }>(rule_book);
+    let reduction_count = self.reduce_in_max_steps::<{ usize::MAX }>(rule_book);
     unsafe { reduction_count.unwrap_unchecked() }
   }
 
   /// Like `reduce` but performs maximum `max_reductions` reduction steps.
   /// Returns the number of reductions actually performed, None if limit was reached.
-  pub fn reduce_in_max_reductions<const MAX_REDUCTIONS: usize>(
-    &mut self,
-    rule_book: &RuleBook,
-  ) -> Option<usize> {
+  pub fn reduce_in_max_steps<const MAX_REDUCTIONS: usize>(&mut self, rule_book: &RuleBook) -> Option<usize> {
     let mut reuse = ReuseableRewriteData::default();
     let mut reduction_count = 0;
     let mut active_pairs = VecDeque::from(self.scan_active_pairs());

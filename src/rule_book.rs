@@ -175,7 +175,7 @@ impl RuleBook {
             !active_pair_candidates_after_inserting_subnet.active_pairs_inside_subnet.is_empty();
           if can_reduce {
             let mut subnet: INet = subnet.clone();
-            subnet.reduce_in_max_reductions::<RULE_BOOK_MAX_PRE_REDUCTION_STEPS>(self).and_then(
+            subnet.reduce_in_max_steps::<RULE_BOOK_MAX_PRE_REDUCTION_STEPS>(self).and_then(
               |reduction_count| {
                 (reduction_count > 0).then(|| {
                   subnet.remove_unused_nodes();
@@ -240,7 +240,8 @@ impl RuleBook {
       let external_ports = &mut reuse.rule_book_external_ports;
       debug_assert_eq!(*external_ports, vec![]);
 
-      // Construct external ports for the rule's RHS sub-net
+      // Construct external ports for the rule's RHS sub-net:
+      // The aux ports of the two active pair nodes are mapped to the subnet's root node ports
       external_ports.extend([lhs_node, rhs_node].into_iter().flat_map(|node| {
         node.ports.iter().skip(1).copied() // Skip principal port
       }));
