@@ -87,7 +87,7 @@ impl INet {
   pub fn free_node(&mut self, node_idx: NodeIdx) {
     let node = &mut self[node_idx];
     node.used = false;
-    node.ports.clear();
+    node.ports.clear(); // Not strictly necessary, but more correct
 
     self.free_nodes.push(node_idx);
   }

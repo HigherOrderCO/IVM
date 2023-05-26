@@ -55,9 +55,9 @@ pub struct RuleBook {
 }
 
 impl RuleBook {
-  pub fn new(_agent_count: usize) -> Self {
-    Self { rules: RuleMap::new() }
-    // Self { rules: RuleMap::new(agent_count) }
+  pub fn new(agent_count: usize) -> Self {
+    // Self { rules: RuleMap::new() }
+    Self { rules: RuleMap::new(agent_count) }
   }
 
   /// Insert into rule book and check for duplicate rules
@@ -141,16 +141,14 @@ impl RuleBook {
 
   /// Precompute and store the active pair candidates for each rule's RHS subnet.
   fn precompute_active_pair_candidates(&mut self) {
-    self.rules = self
-      .rules
-      .clone()
-      .into_iter()
-      .map(|(lhs, mut rhs)| {
+    self.rules = RuleMap::from_iter(
+      self.rules.agent_count,
+      self.rules.clone().into_iter().map(|(lhs, mut rhs)| {
         rhs.active_pair_candidates_after_inserting_subnet =
           rhs.subnet.active_pair_candidates_after_inserting_subnet(self);
         (lhs, rhs)
-      })
-      .collect();
+      }),
+    );
   }
 
   /// Pre-reduce the rule book's RHS sub-nets as an optimization step before running the program.
@@ -191,7 +189,7 @@ impl RuleBook {
                     "Subnet must not have any active pairs after being reduced"
                   );
 
-                  (*key, RuleRhs {
+                  (key, RuleRhs {
                     active_pair: active_pair.clone(),
                     root_port_names: root_port_names.clone(),
                     subnet,
@@ -273,7 +271,7 @@ impl RuleBook {
 
   /// Returns `true` if a rule exists for the given agent ID on either side of the active pair
   pub fn rule_exists_for_agent_id(&self, agent_id: AgentId) -> bool {
-    self.rules.keys().flat_map(|(lhs_id, rhs_id)| [lhs_id, rhs_id]).any(|id| *id == agent_id)
+    self.rules.keys().flat_map(|(lhs_id, rhs_id)| [lhs_id, rhs_id]).any(|id| id == agent_id)
   }
 
   #[cfg(test)]
