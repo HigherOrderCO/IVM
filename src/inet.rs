@@ -353,6 +353,7 @@ impl INet {
     );
 
     let intermediary_nodes = &mut reuse.inet_intermediary_nodes;
+    debug_assert_eq!(*intermediary_nodes, vec![]);
     for node_idx in [a, b] {
       // Skip principal port
       for port_idx in 1 .. self[node_idx].ports.len() {
