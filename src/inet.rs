@@ -10,7 +10,6 @@ use crate::{
 use hashbrown::HashMap;
 use std::{
   cmp::Reverse,
-  collections::VecDeque,
   fmt,
   ops::{Index, IndexMut},
   vec,
@@ -508,7 +507,6 @@ impl INet {
   /// of the inserted subnet nodes, to enable `rewrite_active_pair` to determine new active pairs.
   /// (`reuse.inet_subnet_node_idx_to_main_node_idx[0]` will be the index of the removed subnet root node.)
   pub fn insert_rule_rhs_subnet(&mut self, subnet: &INet, reuse: &mut ReuseableSubnetData) {
-    let external_ports = &reuse.rule_book_external_ports;
     let subnet_node_idx_to_main_node_idx = &mut reuse.inet_subnet_node_idx_to_main_node_idx;
     debug_assert_eq!(*subnet_node_idx_to_main_node_idx, vec![]);
 
@@ -533,6 +531,7 @@ impl INet {
       }
     }
 
+    let external_ports = &reuse.rule_book_external_ports;
     // Pass-through link subnet root node's ports and then remove it, like temporary nodes in `rewrite_active_pair`
     // Remove subnet root node from list of created nodes
     let subnet_root_node_idx_in_self = reuse.map_node_idx_to_outer_net(ROOT_NODE_IDX);
@@ -662,10 +661,10 @@ impl INet {
   pub fn reduce_in_max_steps<const MAX_REDUCTIONS: usize>(&mut self, rule_book: &RuleBook) -> Option<usize> {
     let mut reuse = ReuseableRewriteData::default();
     let mut reduction_count = 0;
-    let mut active_pairs = VecDeque::from(self.scan_active_pairs());
+    let mut active_pairs = self.scan_active_pairs();
     // `active_pairs` is a queue, we process active pairs in the order they were found:
     // Pop from the front while the queue is not empty, and push new active pairs to the back.
-    while let Some(active_pair) = active_pairs.pop_front() {
+    while let Some(active_pair) = active_pairs.pop() {
       if self.rewrite_active_pair(active_pair, rule_book, &mut reuse) {
         active_pairs.extend(&reuse.inet_new_active_pairs_created_by_rewrite);
         reduction_count += 1;
