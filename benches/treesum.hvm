@@ -1,0 +1,13 @@
+(Add a Zero) = a
+(Add a (Succ b)) = (Succ (Add a b))
+
+(TreeSum (Leaf val)) = val
+(TreeSum (Node left right)) = (Add (TreeSum left) (TreeSum right))
+
+(CreateTree Zero) = (Leaf (Succ Zero))
+(CreateTree (Succ n)) = (Node (CreateTree n) (CreateTree n))
+
+(Main) =
+  let n = (Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Zero))))))))))))))
+  let tree = (CreateTree n)
+  (TreeSum tree)

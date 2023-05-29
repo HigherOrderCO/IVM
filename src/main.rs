@@ -37,7 +37,7 @@ fn main() -> Result<()> {
   let elapsed_s = time.elapsed().as_secs_f64();
 
   let rps = reduction_count as f64 / elapsed_s;
-  println!("{}\n[{reduction_count} R][{elapsed_s:.3} s][{rps:.3} RPS]", program.read_back());
-  // println!("[{reduction_count} R][{elapsed_s:.3} s][{rps:.3} RPS]");
+  println!("{}\n\n[TIME: {elapsed_s:.3}s | COST: {reduction_count} | RPS: {rps:.3}]", program.read_back());
+  // println!("[TIME: {elapsed_s:.3}s | COST: {reduction_count} | RPS: {rps:.3}]");
   Ok(())
 }
