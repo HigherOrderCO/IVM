@@ -225,7 +225,7 @@ impl Ast {
       .keys()
       .sorted()
       .enumerate()
-      .map(|(i, &agent)| (agent.to_owned(), 1 + i))
+      .map(|(i, &agent)| (agent.to_owned(), (1 + i) as AgentId))
       .collect::<HashMap<AgentName, AgentId>>();
 
     // Validate rules and build rule book

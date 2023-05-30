@@ -10,7 +10,7 @@ use hashbrown::HashMap;
 use itertools::Itertools;
 
 /// Agent IDs start from 1, 0 is reserved for the root node's agent_id
-pub type AgentId = usize;
+pub type AgentId = u32;
 
 /// Agent ID 0 is reserved for the root
 pub const ROOT_AGENT_ID: AgentId = 0;

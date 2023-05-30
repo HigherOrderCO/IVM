@@ -306,7 +306,7 @@ impl INet {
   // of the two aux ports that were previously using the same wire (like a wire going through it).
   // Then the rewrite is performed as usual, and afterwards the two ports of the intermediary
   // node are linked together and the intermediary node is removed.
-  const INTERMEDIARY_AGENT_ID: AgentId = usize::MAX;
+  const INTERMEDIARY_AGENT_ID: AgentId = AgentId::MAX;
 
   /// Rewrite active pair using rule book.
   /// Assumes that reuse buffers are empty.
