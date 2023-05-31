@@ -662,7 +662,7 @@ fn test_treesum() -> IvmResult<()> {
   }
 
   let n = 4;
-  let src = &std::fs::read_to_string("./benches/treesum.ivm").unwrap();
+  let src = &std::fs::read_to_string("./benches/treesum_generic.ivm").unwrap();
   let src = &src.replace("{n}", &nat(n));
   let ast = Ast::parse(src).unwrap();
   let ast = ast.validate(src).unwrap();

@@ -662,8 +662,6 @@ impl INet {
     let mut reuse = ReuseableRewriteData::default();
     let mut reduction_count = 0;
     let mut active_pairs = self.scan_active_pairs();
-    // `active_pairs` is a queue, we process active pairs in the order they were found:
-    // Pop from the front while the queue is not empty, and push new active pairs to the back.
     while let Some(active_pair) = active_pairs.pop() {
       if self.rewrite_active_pair(active_pair, rule_book, &mut reuse) {
         active_pairs.extend(&reuse.inet_new_active_pairs_created_by_rewrite);

@@ -45,8 +45,6 @@ rule CreateTree(ret) ~ Succ(p) =
     ret ~ Node(l, r)
 
 init
-    // n ~ Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Zero))))))))))))),
-    // n ~ Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Zero)))))))))))))))))))))))),
-    n ~ Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Zero))))))))))))))))))),
+    n ~ {n},
     CreateTree(tree) ~ n,
     TreeSum(root) ~ tree
