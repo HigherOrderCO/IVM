@@ -435,10 +435,10 @@ impl INet {
         new_active_pairs.extend(active_pair_candidates.active_pairs_inside_subnet.iter().map(
           |&(lhs_node_idx, rhs_node_idx)| {
             // The node indices are relative to the subnet, we need to map them to an index in `self`
-            let (lhs_node_idx, rhs_node_idx) = (
+            let (lhs_node_idx, rhs_node_idx) = sort_tuple((
               subnet.map_node_idx_to_outer_net(lhs_node_idx),
               subnet.map_node_idx_to_outer_net(rhs_node_idx),
-            );
+            ));
             debug_assert!(
               self[lhs_node_idx].used,
               "Node {lhs_node_idx} is not used: {:#?}",
@@ -455,14 +455,7 @@ impl INet {
               "Expected active pair: {:?}\n{self:#?}",
               (lhs_node_idx, rhs_node_idx)
             );
-            let node_indices = (lhs_node_idx, rhs_node_idx);
-            debug_assert_eq!(
-              node_indices,
-              sort_tuple(node_indices),
-              "Expected sorted tuple: {:?}",
-              node_indices
-            );
-            node_indices
+            (lhs_node_idx, rhs_node_idx)
           },
         ));
         if cfg!(debug_assertions) {
@@ -618,14 +611,8 @@ impl INet {
       }
     }
 
-    active_pairs_inside_subnet.retain_mut(|active_pair| {
-      if let Some(ordered_active_pair) = rule_book.rule_exists_for_active_pair(self, *active_pair) {
-        *active_pair = ordered_active_pair;
-        true
-      } else {
-        false
-      }
-    });
+    active_pairs_inside_subnet
+      .retain(|active_pair| rule_book.rule_exists_for_active_pair(self, *active_pair));
 
     nodes_whose_principal_port_points_outside_subnet
       .retain(|&node_idx| rule_book.rule_exists_for_agent_id(self[node_idx].agent_id));

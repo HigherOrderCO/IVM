@@ -20,7 +20,7 @@ fn main() -> Result<()> {
   let src = &fs::read_to_string(&args[1])?;
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let pre_preduce = true;
+  let pre_preduce = false;
   let mut program = ast.into_inet_program(pre_preduce);
 
   /* println!("{}", program.read_back());

@@ -3,7 +3,7 @@ use crate::{
   inet::{ActiveNodePair, ActivePairCandidates, INet, NodePort, ReuseableSubnetData},
   parser::ast::{ActivePair, AgentName, PortName, Rule, ROOT_NODE_IDX},
   rule_map::RuleMap,
-  util::sort_tuples_by_fst,
+  util::{sort_tuple, sort_tuples_by_fst},
 };
 use chumsky::prelude::Rich;
 use hashbrown::HashMap;
@@ -12,7 +12,7 @@ use itertools::Itertools;
 /// Maximum number of reduction steps to perform on a net during pre-reduction.
 /// If it cannot be reduced in this many steps, the original net is kept.
 /// Because rules' RHS sub-nets (and the init net) aren't guaranteed to terminate.
-pub const RULE_BOOK_MAX_PRE_REDUCTION_STEPS: usize = 100;
+pub const INET_MAX_PRE_REDUCTION_STEPS: usize = 100;
 
 /// Agent IDs start from 1, 0 is reserved for the root node's agent_id
 pub type AgentId = u32;
@@ -173,32 +173,30 @@ impl RuleBook {
             !active_pair_candidates_after_inserting_subnet.active_pairs_inside_subnet.is_empty();
           if can_reduce {
             let mut subnet: INet = subnet.clone();
-            subnet.reduce_in_max_steps::<RULE_BOOK_MAX_PRE_REDUCTION_STEPS>(self).and_then(
-              |reduction_count| {
-                (reduction_count > 0).then(|| {
-                  // There were active pairs that were reduced
-                  subnet.remove_unused_nodes();
-                  if cfg!(debug_assertions) {
-                    subnet.validate(false);
-                  }
+            subnet.reduce_in_max_steps::<INET_MAX_PRE_REDUCTION_STEPS>(self).and_then(|reduction_count| {
+              (reduction_count > 0).then(|| {
+                // There were active pairs that were reduced
+                subnet.remove_unused_nodes();
+                if cfg!(debug_assertions) {
+                  subnet.validate(false);
+                }
 
-                  let active_pair_candidates_after_inserting_subnet =
-                    subnet.active_pair_candidates_after_inserting_subnet(self);
-                  debug_assert_eq!(
-                    active_pair_candidates_after_inserting_subnet.active_pairs_inside_subnet,
-                    vec![],
-                    "Subnet must not have any active pairs after being reduced"
-                  );
+                let active_pair_candidates_after_inserting_subnet =
+                  subnet.active_pair_candidates_after_inserting_subnet(self);
+                debug_assert_eq!(
+                  active_pair_candidates_after_inserting_subnet.active_pairs_inside_subnet,
+                  vec![],
+                  "Subnet must not have any active pairs after being reduced"
+                );
 
-                  (*key, RuleRhs {
-                    active_pair: active_pair.clone(),
-                    root_port_names: root_port_names.clone(),
-                    subnet,
-                    active_pair_candidates_after_inserting_subnet,
-                  })
+                (*key, RuleRhs {
+                  active_pair: active_pair.clone(),
+                  root_port_names: root_port_names.clone(),
+                  subnet,
+                  active_pair_candidates_after_inserting_subnet,
                 })
-              },
-            )
+              })
+            })
           } else {
             None
           }
@@ -253,21 +251,15 @@ impl RuleBook {
   }
 
   /// Checks if a rule exists for the given active pair, returns the node indices ordered by agent IDs
-  pub fn rule_exists_for_active_pair(
-    &self,
-    net: &INet,
-    active_pair: ActiveNodePair,
-  ) -> Option<ActiveNodePair> {
+  pub fn rule_exists_for_active_pair(&self, net: &INet, active_pair: ActiveNodePair) -> bool {
     let (node_idx_lhs, node_idx_rhs) = active_pair;
     let (lhs_node, rhs_node) = (&net[node_idx_lhs], &net[node_idx_rhs]);
     let (lhs_id, rhs_id) = (lhs_node.agent_id, rhs_node.agent_id);
 
-    // Order node indices along with AgentIDs
-    let ((lhs_id, node_idx_lhs), (rhs_id, node_idx_rhs)) =
-      sort_tuples_by_fst(((lhs_id, node_idx_lhs), (rhs_id, node_idx_rhs)));
-    let key = (lhs_id, rhs_id); // Ordered pair
+    // Order AgentIDs
+    let key = sort_tuple((lhs_id, rhs_id));
 
-    self.rules.contains_key(&key).then_some((node_idx_lhs, node_idx_rhs))
+    self.rules.contains_key(&key)
   }
 
   /// Returns `true` if a rule exists for the given agent ID on either side of the active pair

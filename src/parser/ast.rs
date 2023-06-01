@@ -2,7 +2,7 @@ use crate::{
   error::{pass_output_and_errors_to_result, IvmResult, ProgramErrors},
   inet::{port, INet, NodeIdx},
   inet_program::INetProgram,
-  rule_book::{AgentId, RuleBook, ROOT_AGENT_ID, RULE_BOOK_MAX_PRE_REDUCTION_STEPS},
+  rule_book::{AgentId, RuleBook, INET_MAX_PRE_REDUCTION_STEPS, ROOT_AGENT_ID},
 };
 use chumsky::{prelude::Rich, span::SimpleSpan};
 use derive_new::new;
@@ -380,7 +380,7 @@ impl ValidatedAst {
     if pre_preduce {
       let mut reduced_net = net.clone();
       if let Some(reduction_count) =
-        reduced_net.reduce_in_max_steps::<RULE_BOOK_MAX_PRE_REDUCTION_STEPS>(&rule_book)
+        reduced_net.reduce_in_max_steps::<INET_MAX_PRE_REDUCTION_STEPS>(&rule_book)
       {
         if reduction_count > 0 {
           // There were active pairs that were reduced
