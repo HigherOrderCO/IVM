@@ -527,7 +527,7 @@ fn test_unary_arith() -> IvmResult<()> {
 
     agent Sub(ret, a)
     rule Sub(ret, a) ~ Zero = ret ~ a
-    rule Sub(ret, a) ~ Succ(b) = Pred(pa) ~ a, Sub(ret, pa) ~ b,
+    rule Sub(ret, a) ~ Succ(b) = Pred(pa) ~ a, Sub(ret, pa) ~ b
 
     agent AbsDiff(ret, a)
     // rule AbsDiff(ret, a) ~ b = Add(ret, x) ~ y, Sub(x, a2) ~ Succ(b2), Sub(y, Succ(b3)) ~ a3, Dup(a2, a3) ~ a, Dup(b2, b3) ~ b

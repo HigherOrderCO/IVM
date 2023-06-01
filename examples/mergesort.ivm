@@ -1,0 +1,85 @@
+agent Zero
+agent Succ(pred)
+rule Succ(ret) ~ Zero = ret ~ Succ(Zero)
+rule Succ(ret) ~ Succ(p) = ret ~ Succ(Succ(p))
+
+agent Pred(ret)
+rule Pred(ret) ~ Zero = ret ~ Zero
+rule Pred(ret) ~ Succ(p) = ret ~ p
+
+agent T
+agent F
+
+agent Era
+
+rule Era ~ T =
+rule Era ~ F =
+
+rule Era ~ Zero =
+rule Era ~ Succ(p) = Era ~ p
+
+rule Era ~ Nil =
+rule Era ~ Cons(x, xs) = Era ~ x, Era ~ xs
+
+agent Dup(a, b)
+rule Dup(a, b) ~ Zero = a ~ Zero, b ~ Zero
+rule Dup(a, b) ~ Succ(p) = a ~ Succ(a2), b ~ Succ(b2), Dup(a2, b2) ~ p
+
+rule Dup(a, b) ~ Nil = a ~ Nil, b ~ Nil
+rule Dup(a, b) ~ Cons(x, xs) = Dup(x1, x2) ~ x, Dup(xs1, xs2) ~ xs, a ~ Cons(x1, xs1), b ~ Cons(x2, xs2)
+
+agent IsZero(ret)
+rule IsZero(ret) ~ Zero = ret ~ T
+rule IsZero(ret) ~ Succ(a) = Era ~ a, ret ~ F
+
+agent SaturatingSub(ret, a)
+rule SaturatingSub(ret, a) ~ Zero = ret ~ a
+rule SaturatingSub(ret, a) ~ Succ(b) = Pred(pa) ~ a, SaturatingSub(ret, pa) ~ b
+
+// (a <= b) <=> a.saturating_sub(b) == 0
+agent LessOrEqual(ret, a)
+rule LessOrEqual(ret, a) ~ Zero = IsZero(ret) ~ a
+rule LessOrEqual(ret, a) ~ Succ(b) = SaturatingSub(r, a) ~ Succ(b), IsZero(ret) ~ r
+
+agent If(ret, t, e)
+rule If(ret, t, e) ~ T = Era ~ e, ret ~ t
+rule If(ret, t, e) ~ F = Era ~ t, ret ~ e
+
+agent Nil
+agent Cons(x, xs)
+
+agent MergeSort(ret)
+rule MergeSort(ret) ~ Nil = ret ~ Nil
+rule MergeSort(ret) ~ Cons(x, xs) = MsTail(ret, x) ~ xs
+
+agent MsTail(ret, n)
+rule MsTail(ret, n) ~ Nil = ret ~ Cons(n, Nil)
+rule MsTail(ret, n) ~ Cons(x, xs) =
+    Split(left, right) ~ Cons(n, Cons(x, xs)),
+    MergeSort(a) ~ left, MergeSort(b) ~ right, Merge(ret, b) ~ a
+
+agent Merge(ret, snd)
+rule Merge(ret, snd) ~ Nil = ret ~ snd
+rule Merge(ret, snd) ~ Cons(x, xs) = MergeCC(ret, x, xs) ~ snd
+
+agent MergeCC(ret, y, ys)
+rule MergeCC(ret, y, ys) ~ Nil = ret ~ Cons(y, ys)
+rule MergeCC(ret, y, ys) ~ Cons(x, xs) =
+    Dup(x1, xc) ~ x, Dup(x2, x3) ~ xc, Dup(xs1, xs2) ~ xs,
+    Dup(y1, yc) ~ y, Dup(y2, y3) ~ yc, Dup(ys1, ys2) ~ ys,
+    then ~ Cons(x1, cnt1), MergeCC(cnt1, y1, ys1) ~ xs1,
+    else ~ Cons(y2, cnt2), MergeCC(cnt2, x2, xs2) ~ ys2,
+    If(ret, then, else) ~ le, LessOrEqual(le, x3) ~ y3
+
+agent Split(right, left)
+rule Split(right, left) ~ Nil = right ~ Nil, left ~ Nil
+rule Split(right, left) ~ Cons(x, xs) =
+    right ~ Cons(x, cntl), left ~ cntr, Split(cntr, cntl) ~ xs
+
+init
+    n1 ~ Succ(Zero),
+    n2 ~ Succ(Succ(Zero)),
+    n3 ~ Succ(Succ(Succ(Zero))),
+    n4 ~ Succ(Succ(Succ(Succ(Zero)))),
+    n5 ~ Succ(Succ(Succ(Succ(Succ(Zero))))),
+    MergeSort(root) ~ Cons(n3, Cons(n4, Cons(n1, Cons(n5, Cons(n2, Nil)))))
