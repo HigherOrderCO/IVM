@@ -11,8 +11,8 @@ fn setup(n: usize) -> INetProgram {
   let src = &src.replace("{n}", &nat(n));
   let ast = Ast::parse(src).unwrap();
   let ast = ast.validate(src).unwrap();
-  let reduce_rule_rhs_subnets = true;
-  ast.into_inet_program(reduce_rule_rhs_subnets)
+  let pre_preduce = false;
+  ast.into_inet_program(pre_preduce)
 }
 
 fn run(mut program: INetProgram) {

@@ -2,7 +2,7 @@ use crate::{
   error::{pass_output_and_errors_to_result, IvmResult, ProgramErrors},
   inet::{port, INet, NodeIdx},
   inet_program::INetProgram,
-  rule_book::{AgentId, RuleBook, ROOT_AGENT_ID},
+  rule_book::{AgentId, RuleBook, ROOT_AGENT_ID, RULE_BOOK_MAX_PRE_REDUCTION_STEPS},
 };
 use chumsky::{prelude::Rich, span::SimpleSpan};
 use derive_new::new;
@@ -356,7 +356,7 @@ pub struct ValidatedAst {
 
 impl ValidatedAst {
   /// Generate an `INetProgram` from a `ValidatedAst`
-  pub fn into_inet_program(self, reduce_rule_rhs_subnets: bool) -> INetProgram {
+  pub fn into_inet_program(self, pre_preduce: bool) -> INetProgram {
     let Self { ast, mut rule_book, agent_name_to_id, agent_id_to_name } = self;
 
     let mut net = INet::default();
@@ -375,7 +375,24 @@ impl ValidatedAst {
       net.validate(false);
     }
 
-    rule_book.finalize(&agent_id_to_name, reduce_rule_rhs_subnets);
+    rule_book.finalize(&agent_id_to_name, pre_preduce);
+
+    if pre_preduce {
+      let mut reduced_net = net.clone();
+      if let Some(reduction_count) =
+        reduced_net.reduce_in_max_steps::<RULE_BOOK_MAX_PRE_REDUCTION_STEPS>(&rule_book)
+      {
+        if reduction_count > 0 {
+          // There were active pairs that were reduced
+          reduced_net.remove_unused_nodes();
+          if cfg!(debug_assertions) {
+            reduced_net.validate(false);
+          }
+          net = reduced_net;
+        }
+      }
+    }
+
     INetProgram::new(ast, net, rule_book, agent_id_to_name)
   }
 }

@@ -116,7 +116,7 @@ fn test_add_one_three() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.into_inet_program(true);
+  let mut program = ast.into_inet_program(false);
   assert_eq!(program.net.scan_active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   program.reduce();
@@ -140,7 +140,7 @@ fn test_add_zero_zero() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.into_inet_program(true);
+  let mut program = ast.into_inet_program(false);
   eprintln!("{:#?}", program.net);
   assert_eq!(program.net.scan_active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
@@ -161,7 +161,7 @@ fn test_reduce_inet_basic() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.into_inet_program(true);
+  let mut program = ast.into_inet_program(false);
   assert_eq!(program.net.scan_active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   assert!(!program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
@@ -183,7 +183,7 @@ fn test_reduce_inet_ctor_era() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.into_inet_program(true);
+  let mut program = ast.into_inet_program(false);
   assert_eq!(program.net.scan_active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
@@ -313,7 +313,7 @@ fn test_reduce_inet_link_self_aux() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.into_inet_program(true);
+  let mut program = ast.into_inet_program(false);
   assert_eq!(program.net.scan_active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   assert!(!program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
@@ -331,7 +331,7 @@ fn test_reduce_inet_link_self_double() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.into_inet_program(true);
+  let mut program = ast.into_inet_program(false);
   assert_eq!(program.net.scan_active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   assert!(!program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
@@ -350,7 +350,7 @@ fn test_reduce_inet_link_pair_single() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.into_inet_program(true);
+  let mut program = ast.into_inet_program(false);
   assert_eq!(program.net.scan_active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   assert!(!program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
@@ -368,7 +368,7 @@ fn test_reduce_inet_link_pair_double() -> IvmResult<()> {
   ";
   let ast = Ast::parse(src)?;
   let ast = ast.validate(src)?;
-  let mut program = ast.into_inet_program(true);
+  let mut program = ast.into_inet_program(false);
   assert_eq!(program.net.scan_active_pairs().len(), 1, "{}\n{:#?}", program.ast, program.net);
   assert!(program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
   assert!(!program.net.scan_active_pairs_and_reduce_step(&program.rule_book));
@@ -635,7 +635,7 @@ fn test_lambda() -> IvmResult<()> {
     let result = program.read_back();
     eprintln!("{step:2}: {result}");
     if !program.net.scan_active_pairs_and_reduce_step(&program.rule_book) {
-      assert_eq!(result, "root ~ Dup(Lam(_4, _4), Lam(_2, _2))");
+      assert_eq!(result, "root ~ Dup(Lam(_2, _2), Lam(_4, _4))");
       break;
     }
   }

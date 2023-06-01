@@ -53,14 +53,5 @@ cargo test
 - Built-in DUP/SUP/ERA nodes & rules and brackets for lambda calculus
 
 ## Possible Optimizations
-- Readback without storing agent names in nodes, map `agent_id` to `agent_name` for readback
-- Using `smallvec` for `Node` ports to reduce heap allocations
-- Eliminate memory allocations during rewrites
-- When determining newly created active pairs after a rewrite, don't look at all nodes created by rewritten sub-net for determining new active pairs:
-    - Pre-reduce RHS of rules so that sub-net created by rewrite cannot contain active pairs in its interior, there can be only new active pairs on its boundary links to neighbor nodes
-        - Only look at agents adjacent to rewritten sub-net for determining new active pairs
-    - Or statically determine which created nodes inside rewritten sub-net form active pairs, and store this info in `RuleRhs` so that not all interior nodes have to be scanned
-    - Statically determine which external links of the rewritten sub-net can form new active pairs
 - Parallel reduction using rayon
     - Static analysis to determine which reductions benefit from parallelism vs which ones are blocked by previous reductions
-- When compiling: Pre-reduce `init` connections at compile-time

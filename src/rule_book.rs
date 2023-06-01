@@ -9,6 +9,11 @@ use chumsky::prelude::Rich;
 use hashbrown::HashMap;
 use itertools::Itertools;
 
+/// Maximum number of reduction steps to perform on a net during pre-reduction.
+/// If it cannot be reduced in this many steps, the original net is kept.
+/// Because rules' RHS sub-nets (and the init net) aren't guaranteed to terminate.
+pub const RULE_BOOK_MAX_PRE_REDUCTION_STEPS: usize = 100;
+
 /// Agent IDs start from 1, 0 is reserved for the root node's agent_id
 pub type AgentId = u32;
 
@@ -131,11 +136,11 @@ impl RuleBook {
   /// Finalize the rule book after all rules have been inserted. Must be called before doing rewrites.
   /// Precompute and store the active pair candidates for each rule's RHS subnet.
   /// Optionally optimize the rule book by reducing the RHS sub-nets of each rule.
-  pub fn finalize(&mut self, agent_id_to_name: &HashMap<AgentId, AgentName>, reduce_rule_rhs_subnets: bool) {
+  pub fn finalize(&mut self, agent_id_to_name: &HashMap<AgentId, AgentName>, pre_preduce: bool) {
     self.precompute_active_pair_candidates();
 
-    if reduce_rule_rhs_subnets {
-      self.reduce_rule_rhs_subnets(agent_id_to_name);
+    if pre_preduce {
+      self.pre_reduce_rule_rhs_subnets(agent_id_to_name);
     }
   }
 
@@ -153,12 +158,7 @@ impl RuleBook {
 
   /// Pre-reduce the rule book's RHS sub-nets as an optimization step before running the program.
   /// This must be done after all rules have been inserted.
-  fn reduce_rule_rhs_subnets(&mut self, _agent_id_to_name: &HashMap<AgentId, AgentName>) {
-    /// Maximum number of reduction steps to perform on each rule's RHS sub-net.
-    /// If it cannot be reduced in this many steps, the original sub-net is kept.
-    /// Because rules' RHS sub-nets are not guaranteed to terminate.
-    const RULE_BOOK_MAX_PRE_REDUCTION_STEPS: usize = 100;
-
+  fn pre_reduce_rule_rhs_subnets(&mut self, _agent_id_to_name: &HashMap<AgentId, AgentName>) {
     let reduced_rules = self
       .rules
       .iter()
@@ -176,6 +176,7 @@ impl RuleBook {
             subnet.reduce_in_max_steps::<RULE_BOOK_MAX_PRE_REDUCTION_STEPS>(self).and_then(
               |reduction_count| {
                 (reduction_count > 0).then(|| {
+                  // There were active pairs that were reduced
                   subnet.remove_unused_nodes();
                   if cfg!(debug_assertions) {
                     subnet.validate(false);

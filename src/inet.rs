@@ -279,7 +279,7 @@ impl INet {
     created_nodes
   }
 
-  /// Remove all unused nodes, called by `RuleBook::reduce_rule_rhs_subnets`
+  /// Remove all unused nodes, called by `RuleBook::pre_preduce`
   pub fn remove_unused_nodes(&mut self) {
     self.free_nodes.sort_by_key(|&node_idx| Reverse(node_idx));
     for unused_node_idx in self.free_nodes.drain(..) {
