@@ -7,6 +7,22 @@ agent Pred(ret)
 rule Pred(ret) ~ Zero = ret ~ Zero
 rule Pred(ret) ~ Succ(p) = ret ~ p
 
+agent Add(ret, a)
+rule Add(ret, a) ~ Zero = ret ~ a
+rule Add(ret, a) ~ Succ(b) = ret ~ Succ(cnt), Add(cnt, a) ~ b
+
+agent Mul(ret, a)
+rule Mul(ret, a) ~ Zero = ret ~ Zero, a ~ Era
+rule Mul(ret, a) ~ Succ(b) = Dup(a2, a3) ~ a, Add(ret, a2) ~ cnt, Mul(cnt, a3) ~ b
+
+// a^(b+1) = a*a^b
+agent Pow(ret, base)
+rule Pow(ret, base) ~ Zero = Era ~ base, ret ~ Succ(Zero)
+rule Pow(ret, base) ~ Succ(exp) =
+    Dup(base1, base2) ~ base,
+    Pow(pow, base2) ~ exp,
+    Mul(ret, base1) ~ pow
+
 agent T
 agent F
 
@@ -76,10 +92,13 @@ rule Split(right, left) ~ Nil = right ~ Nil, left ~ Nil
 rule Split(right, left) ~ Cons(x, xs) =
     right ~ Cons(x, cntl), left ~ cntr, Split(cntr, cntl) ~ xs
 
+// Create inversely ordered list
+agent CreateList(ret)
+rule CreateList(ret) ~ Zero = ret ~ Nil
+rule CreateList(ret) ~ Succ(p) = Dup(p1, p2) ~ p, CreateList(tail) ~ p2, ret ~ Cons(Succ(p1), tail)
+
 init
-    n1 ~ Succ(Zero),
-    n2 ~ Succ(Succ(Zero)),
-    n3 ~ Succ(Succ(Succ(Zero))),
-    n4 ~ Succ(Succ(Succ(Succ(Zero)))),
-    n5 ~ Succ(Succ(Succ(Succ(Succ(Zero))))),
-    MergeSort(root) ~ Cons(n3, Cons(n4, Cons(n1, Cons(n5, Cons(n2, Nil)))))
+    // root <- MergeSort(_ <- CreateList(_ <- Pow(Succ(Succ(Zero)), Succ(Succ(Succ(Zero))))))
+    Pow(n, Succ(Succ(Zero))) ~ Succ(Succ(Succ(Succ(Zero)))),
+    CreateList(list) ~ n,
+    MergeSort(root) ~ list
