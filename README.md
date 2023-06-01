@@ -28,6 +28,11 @@ https://higherorderco.github.io/IVM-doc/doc/ivm/index.html
 cargo run -- examples/sum.ivm
 ```
 
+## Running the benchmarks
+```sh
+./benches/cmp_ivm_hvm.sh
+```
+
 ## Running the tests
 ```sh
 cargo test
