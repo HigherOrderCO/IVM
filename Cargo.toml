@@ -29,6 +29,7 @@ strip = false
 [dependencies]
 ariadne = "0.2.0"
 chumsky = { version = "1.0.0-alpha.4", features = ["label"] }
+clap = { version = "4.3.1", features = ["derive"] }
 color-eyre = { version = "0.6.2", default-features = false }
 derive-new = "0.5.9"
 hashbrown = "0.13.2"
