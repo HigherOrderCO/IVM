@@ -1,0 +1,56 @@
+(Pred Zero) = Zero
+(Pred (Succ p)) = p
+
+(Add a Zero) = a
+(Add a (Succ b)) = (Succ (Add a b))
+
+(Mul a Zero) = Zero
+(Mul a (Succ b)) = (Add a (Mul a b))
+
+// a^(b+1) = a*a^b
+(Pow base Zero) = (Succ Zero)
+(Pow base (Succ exp)) = (Mul base (Pow base exp))
+
+(IsZero Zero) = T
+(IsZero (Succ a)) = F
+
+(SaturatingSub a Zero) = a
+(SaturatingSub a (Succ b)) = (SaturatingSub (Pred a) b)
+
+// (a <= b) <=> a.saturating_sub(b) == 0
+(LessOrEqual a Zero) = (IsZero a)
+(LessOrEqual a (Succ b)) = (IsZero (SaturatingSub a (Succ b)))
+
+(If T t e) = t
+(If F t e) = e
+
+(MergeSort Nil) = Nil
+(MergeSort (Cons x xs)) = (MsTail x xs)
+
+(MsTail n Nil) = (Cons n Nil)
+(MsTail n (Cons x xs)) = (MsTailCC (Split (Cons n (Cons x xs))))
+
+(MsTailCC (Pair left right)) = (Merge (MergeSort left) (MergeSort right))
+
+(Merge snd Nil) = snd
+(Merge snd (Cons x xs)) = (MergeCC x xs snd)
+
+(MergeCC y ys Nil) = (Cons y ys)
+(MergeCC y ys (Cons x xs)) =
+  (If (LessOrEqual x y)
+    (Cons x (MergeCC y ys xs))
+    (Cons y (MergeCC x xs ys))
+  )
+
+(Split Nil) = (Pair Nil Nil)
+(Split (Cons x xs)) = (SplitCC x (Split xs))
+
+(SplitCC x (Pair cntr cntl)) = (Pair (Cons x cntl) cntr)
+
+(CreateList Zero) = Nil
+(CreateList (Succ p)) = (Cons (Succ p) (CreateList p))
+
+(Main) =
+  let n = (Pow (Succ (Succ Zero)) (Succ (Succ (Succ (Succ (Succ (Succ (Succ Zero))))))))
+  let list = (CreateList n)
+  (MergeSort list)

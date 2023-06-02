@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-time (hvm run -f benches/treesum.hvm -t 1 -c true "(Main)" | grep RPS) &
-time (target/release/ivm benches/treesum.ivm | grep RPS) &
-wait
+echo "HVM treesum: $(hvm run -f benches/treesum.hvm -t 1 -c true "(Main)" 2>&1 | grep RPS)"
+echo "IVM treesum: $(target/release/ivm benches/treesum.ivm 2>&1 | grep RPS)"
+
+echo "HVM mergesort: $(hvm run -f benches/mergesort.hvm -t 1 -c true "(Main)" 2>&1 | grep RPS)"
+echo "IVM mergesort: $(target/release/ivm benches/mergesort.ivm 2>&1 | grep RPS)"
