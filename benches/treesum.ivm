@@ -3,10 +3,44 @@ agent Succ(p)
 rule Succ(ret) ~ Zero = ret ~ Succ(Zero)
 rule Succ(ret) ~ Succ(p) = ret ~ Succ(Succ(p))
 
+agent Era
+rule Era ~ Zero = // Nada
+rule Era ~ Succ(p) = Era ~ p
+
+agent Dup(a, b)
+rule Dup(a, b) ~ Zero = a ~ Zero, b ~ Zero
+rule Dup(a, b) ~ Succ(p) = Dup(p1, p2) ~ p, a ~ Succ(p1), b ~ Succ(p2)
+
+agent T
+agent F
+
+rule Era ~ T = // Nada
+rule Era ~ F = // Nada
+
+agent IsZero(ret)
+rule IsZero(ret) ~ Zero = ret ~ T
+rule IsZero(ret) ~ Succ(a) = ret ~ F, a ~ Era
+
+agent Pred(ret)
+rule Pred(ret) ~ Zero = ret ~ Zero
+rule Pred(ret) ~ Succ(p) = ret ~ p
+
+agent SaturatingSub(ret, a)
+rule SaturatingSub(ret, a) ~ Zero = ret ~ a
+rule SaturatingSub(ret, a) ~ Succ(b) = Pred(pa) ~ a, SaturatingSub(ret, pa) ~ b,
+
 agent Add(ret, a)
 rule Add(ret, a) ~ Zero = ret ~ a
 rule Add(ret, a) ~ Succ(b) = ret ~ Succ(cnt), Add(cnt, a) ~ b
-/*
+
+agent AbsDiff(ret, a)
+rule AbsDiff(ret, a) ~ Zero = ret ~ a
+rule AbsDiff(ret, a) ~ Succ(b) = Add(ret, x) ~ y, SaturatingSub(x, a2) ~ Succ(b2), SaturatingSub(y, Succ(b3)) ~ a3, Dup(a2, a3) ~ a, Dup(b2, b3) ~ b
+
+agent Eq(ret, a)
+rule Eq(ret, a) ~ Zero = IsZero(ret) ~ a
+rule Eq(ret, a) ~ Succ(b) = IsZero(ret) ~ d, AbsDiff(d, a) ~ Succ(b)
+
 agent Mul(ret, a)
 rule Mul(ret, a) ~ Zero = ret ~ Zero, a ~ Era
 rule Mul(ret, a) ~ Succ(b) = Dup(a2, a3) ~ a, Add(ret, a2) ~ cnt, Mul(cnt, a3) ~ b
@@ -18,14 +52,6 @@ rule Pow(ret, base) ~ Succ(exp) =
     Dup(base1, base2) ~ base,
     Pow(pow, base2) ~ exp,
     Mul(ret, base1) ~ pow
-*/
-agent Era
-rule Era ~ Zero = // Nada
-rule Era ~ Succ(p) = Era ~ p
-
-agent Dup(a, b)
-rule Dup(a, b) ~ Zero = a ~ Zero, b ~ Zero
-rule Dup(a, b) ~ Succ(p) = Dup(p1, p2) ~ p, a ~ Succ(p1), b ~ Succ(p2)
 
 agent Leaf(val)
 agent Node(left, right)
@@ -45,8 +71,9 @@ rule CreateTree(ret) ~ Succ(p) =
     ret ~ Node(l, r)
 
 init
-    n ~ Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Zero))))))))))))),
-    // n ~ Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Zero)))))))))))))))))))))))),
-    // n ~ Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Zero))))))))))))))))))),
-    CreateTree(tree) ~ n,
-    TreeSum(root) ~ tree
+    n ~ Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Zero)))))))))))))),
+    Dup(n1, n2) ~ n,
+    CreateTree(tree) ~ n1,
+    TreeSum(sum) ~ tree,
+    Pow(pow, Succ(Succ(Zero))) ~ n2,
+    Eq(root, sum) ~ pow

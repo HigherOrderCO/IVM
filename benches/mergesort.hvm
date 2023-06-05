@@ -51,6 +51,6 @@
 (CreateList (Succ p)) = (Cons (Succ p) (CreateList p))
 
 (Main) =
-  let n = (Pow (Succ (Succ Zero)) (Succ (Succ (Succ (Succ (Succ (Succ (Succ Zero))))))))
+  let n = (Pow (Succ (Succ Zero)) (Succ (Succ (Succ (Succ Zero)))))
   let list = (CreateList n)
   (MergeSort list)

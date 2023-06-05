@@ -1,5 +1,27 @@
+(Pred Zero) = Zero
+(Pred (Succ p)) = p
+
 (Add a Zero) = a
 (Add a (Succ b)) = (Succ (Add a b))
+
+(Mul a Zero) = Zero
+(Mul a (Succ b)) = (Add a (Mul a b))
+
+// a^(b+1) = a*a^b
+(Pow base Zero) = (Succ Zero)
+(Pow base (Succ exp)) = (Mul base (Pow base exp))
+
+(IsZero Zero) = T
+(IsZero (Succ a)) = F
+
+(SaturatingSub a Zero) = a
+(SaturatingSub a (Succ b)) = (SaturatingSub (Pred a) b)
+
+(AbsDiff a Zero) = a
+(AbsDiff a (Succ b)) = (Add (SaturatingSub a (Succ b)) (SaturatingSub (Succ b) a))
+
+(Eq a Zero) = (IsZero a)
+(Eq a (Succ b)) = (IsZero (AbsDiff a (Succ b)))
 
 (TreeSum (Leaf val)) = val
 (TreeSum (Node left right)) = (Add (TreeSum left) (TreeSum right))
@@ -8,6 +30,8 @@
 (CreateTree (Succ n)) = (Node (CreateTree n) (CreateTree n))
 
 (Main) =
-  let n = (Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Zero))))))))))))))
+  let n = (Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Zero)))))))))))))))
   let tree = (CreateTree n)
-  (TreeSum tree)
+  let sum = (TreeSum tree)
+  let pow = (Pow (Succ (Succ Zero)) n)
+  (Eq sum pow)
